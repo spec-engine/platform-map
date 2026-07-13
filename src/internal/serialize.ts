@@ -58,7 +58,7 @@ function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
 function sortUnit(unit: Unit): Unit {
   return {
     ...unit,
-    units: unit.units.map(sortUnit).slice().sort(compareUnits),
+    units: unit.units.map(sortUnit).sort(compareUnits),
   };
 }
 
@@ -73,7 +73,7 @@ function sortUnit(unit: Unit): Unit {
 export function serialize(pm: PlatformMap): PlatformMap {
   return {
     ...pm,
-    units: pm.units.map(sortUnit).slice().sort(compareUnits),
+    units: pm.units.map(sortUnit).sort(compareUnits),
     edges: pm.edges.slice().sort(compareEdges),
     diagnostics: pm.diagnostics.slice().sort(compareDiagnostics),
   };
