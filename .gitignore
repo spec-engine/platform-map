@@ -1,0 +1,4 @@
+.factory/
+node_modules/
+dist/
+*.tsbuildinfo
