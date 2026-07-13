@@ -125,8 +125,10 @@ function probeOrchestrator(root: string): Detection["orchestrator"] {
 function assertRootExists(root: string): void {
   if (!exists(root)) {
     // Never an absolute path in the thrown message (errors.ts contract) —
-    // basename is enough to identify which root was missing.
-    throw new RootNotFoundError(path.basename(root) || root);
+    // basename is enough to identify which root was missing. Falls back to
+    // a fixed placeholder (never the raw `root`) when basename is empty
+    // (e.g. root normalizes to an all-slash path like "/" or "").
+    throw new RootNotFoundError(path.basename(root) || "(root)");
   }
 }
 

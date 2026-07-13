@@ -164,6 +164,19 @@ test("detect() on a nonexistent path throws RootNotFoundError", () => {
   );
 });
 
+test("RootNotFoundError never leaks the raw root when path.basename(root) is empty (WR-02)", () => {
+  // path.basename("") === "" — the exact fallback branch that used to
+  // reinstate the raw (potentially absolute) `root` argument verbatim.
+  assert.throws(
+    () => detect(""),
+    (err) => {
+      assert.ok(err instanceof RootNotFoundError);
+      assert.equal(err.message, "platform-map: root not found: (root)");
+      return true;
+    },
+  );
+});
+
 test("a malformed pnpm-workspace.yaml degrades gracefully, never throws", () => {
   const tempRoot = mkTempDir();
   try {
