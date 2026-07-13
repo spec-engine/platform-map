@@ -94,7 +94,12 @@ export function scanSiblings(
     }
 
     const absoluteEntryPath = path.join(resolvedScanRoot, name);
-    // (see CR-02 for the self-exclusion check that belongs here too)
+
+    // Never list the platform root itself as its own sibling — with the
+    // default scanRoot "..", resolvedScanRoot's listing necessarily
+    // includes root's own basename (CR-02).
+    if (absoluteEntryPath === resolvedPlatformRoot) continue;
+
     if (!existsAt(absoluteEntryPath, ".git")) continue;
 
     siblings.push({

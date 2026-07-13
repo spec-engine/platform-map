@@ -124,6 +124,37 @@ test("multi-repo classification + DET-02 composability + DET-05 ref:null", () =>
   }
 });
 
+test("detect() finds a real sibling under the documented default scanRoot '..' and never reports root as its own sibling (CR-01/CR-02 regression)", () => {
+  // Regression coverage for CR-01/CR-02: this deliberately does NOT pass a
+  // scanRoot override (unlike the composability test above, which uses
+  // scanRoot: "." to sidestep the exact default code path that was broken)
+  // — it exercises detect(root) with default options, the single most
+  // common call shape, against a real .git-bearing sibling.
+  const parent = mkTempDir();
+  try {
+    const rootApp = path.join(parent, "root-app");
+    fs.mkdirSync(rootApp);
+    mkGitMarker(rootApp);
+
+    const sibling1 = path.join(parent, "sibling1");
+    fs.mkdirSync(sibling1);
+    mkGitMarker(sibling1);
+
+    const result = detect(rootApp);
+    assert.equal(result.mode, "multi-repo");
+    assert.deepEqual(
+      result.siblings.map((s) => s.name),
+      ["sibling1"],
+    );
+    assert.equal(
+      result.siblings.some((s) => s.name === "root-app" || s.path === "."),
+      false,
+    );
+  } finally {
+    rmTempDir(parent);
+  }
+});
+
 // ── Error contract: the one Phase-1 throw case ──────────────────────────────
 
 test("detect() on a nonexistent path throws RootNotFoundError", () => {
