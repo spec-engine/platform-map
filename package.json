@@ -39,7 +39,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "node --test test/",
+    "test": "node --test",
     "typecheck": "tsc --noEmit",
     "lint": "biome ci ."
   },
