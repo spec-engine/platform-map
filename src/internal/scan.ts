@@ -48,12 +48,19 @@ function compareByName(a: Sibling, b: Sibling): number {
  * Scans `scanRoot` (a path relative to `platformRoot`, typically ".." — the
  * parent of the repo detect() was called on) for candidate sibling repos.
  * Dotfiles and `ignore`-listed entries are filtered BEFORE any per-entry
- * filesystem check (ignore-before-I/O). Every resolved candidate path is
- * checked with `resolveWithinRoot` — an escaping path is dropped with a
- * UNIT_PATH_ESCAPE diagnostic and never entered (SEC-02). Only entries with
- * a `.git` directory or file are kept. Returned siblings are always sorted
- * by `name` (sort-at-construction) so output is identical regardless of the
- * underlying directory-listing order.
+ * filesystem check (ignore-before-I/O). Every resolved entry name is checked
+ * with `resolveWithinRoot` against the *resolved scan directory* — this
+ * guards against a crafted entry name smuggling extra `..` segments beyond
+ * the scan directory (defense in depth against a hostile readdir seam), NOT
+ * against the expected single-level climb that `scanRoot: ".."` itself
+ * represents relative to `platformRoot` (CR-01: siblings legitimately live
+ * outside the platform root — validating them against `platformRoot` itself
+ * would reject every real sibling by construction). An escaping entry is
+ * dropped with a UNIT_PATH_ESCAPE diagnostic and never entered (SEC-02).
+ * The platform root's own entry is excluded from its own sibling list
+ * (CR-02). Only entries with a `.git` directory or file are kept. Returned
+ * siblings are always sorted by `name` (sort-at-construction) so output is
+ * identical regardless of the underlying directory-listing order.
  */
 export function scanSiblings(
   platformRoot: string,
@@ -62,6 +69,7 @@ export function scanSiblings(
   readdir: (dir: string) => string[] = defaultReaddir,
 ): { siblings: Sibling[]; diagnostics: Diagnostic[] } {
   const resolvedScanRoot = path.resolve(platformRoot, scanRoot);
+  const resolvedPlatformRoot = path.resolve(platformRoot);
 
   let entries: string[];
   try {
@@ -77,19 +85,24 @@ export function scanSiblings(
     if (name.startsWith(".")) continue;
     if (isIgnored(name, ignore)) continue;
 
-    const candidatePath = path.join(scanRoot, name);
-    const guard = resolveWithinRoot(platformRoot, candidatePath);
+    // Guards against a crafted entry name escaping the scan directory
+    // itself, not against the expected ".." (CR-01).
+    const guard = resolveWithinRoot(resolvedScanRoot, name);
     if (!guard.ok) {
       diagnostics.push(guard.diagnostic);
       continue;
     }
 
-    const absoluteEntryPath = path.resolve(platformRoot, candidatePath);
+    const absoluteEntryPath = path.join(resolvedScanRoot, name);
+    // (see CR-02 for the self-exclusion check that belongs here too)
     if (!existsAt(absoluteEntryPath, ".git")) continue;
 
     siblings.push({
       name,
-      path: guard.relative,
+      path: path
+        .relative(resolvedPlatformRoot, absoluteEntryPath)
+        .split(path.sep)
+        .join("/"),
       ref: null, // DET-05: no git subprocess here — populated by Phase 2's siblings adapter
       hasDfPointer: existsAt(absoluteEntryPath, "df-config.json"),
       conflict: null,

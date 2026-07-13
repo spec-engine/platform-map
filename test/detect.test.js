@@ -211,20 +211,20 @@ test("scanSiblings sorts by name identically regardless of readdir order (DETR-0
   }
 });
 
-test("scanSiblings drops a root-escaping candidate with UNIT_PATH_ESCAPE", () => {
+test("scanSiblings drops a hostile readdir entry that escapes the scan directory with UNIT_PATH_ESCAPE (CR-01)", () => {
   const tempRoot = mkTempDir();
   try {
-    // A plain, non-dotfile entry name ("some-repo") combined with a
-    // deliberately climbing `scanRoot` — the escape comes from the
-    // resolved candidate path, not from the entry name itself (a real
-    // fs.readdirSync() entry is always a bare basename, never containing
-    // "..").
-    const result = scanSiblings(
-      tempRoot,
-      "../../../../../../../../..",
-      undefined,
-      () => ["some-repo"],
-    );
+    // The expected single-level climb of `scanRoot: ".."` itself must NOT
+    // be treated as an escape (that was the CR-01 bug) — a genuine escape
+    // can only come from a hostile/crafted entry NAME smuggling extra ".."
+    // segments beyond the resolved scan directory (a real fs.readdirSync()
+    // entry is always a bare basename, but the readdir seam is injectable
+    // for exactly this defense-in-depth test). The name must not start
+    // with "." (or the dotfile filter would skip it before the guard ever
+    // runs), so the escape is embedded mid-name instead.
+    const result = scanSiblings(tempRoot, ".", undefined, () => [
+      "sibling/../../../../../../etc",
+    ]);
     assert.deepEqual(result.siblings, []);
     assert.equal(result.diagnostics.length, 1);
     assert.equal(result.diagnostics[0].code, "UNIT_PATH_ESCAPE");
