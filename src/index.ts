@@ -1,8 +1,8 @@
 // Public entry point for @spec-engine/platform-map.
-// Re-exports the full public type contract plus the deterministic serializer.
-// `detect`/`map`/`graph`/`deriveRole` land in later phases (Phase 1 scaffolds
-// the contract and the serializer only).
+// Re-exports the full public type contract, the deterministic serializer,
+// and detect(). `map`/`graph`/`deriveRole` land in later phases.
 
+export { detect } from "./detect.js";
 export { RootNotFoundError } from "./errors.js";
 // toJSON/serialize are an intentional additive public extension beyond
 // DESIGN.md's original §4 function list — see README's "Determinism" section.
