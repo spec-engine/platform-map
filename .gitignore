@@ -1,4 +1,6 @@
 .factory/
 node_modules/
 dist/
+dist-typecheck-only/
 *.tsbuildinfo
+.DS_Store

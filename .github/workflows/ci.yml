@@ -1,0 +1,62 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx biome ci .
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint-typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm } # tsdown requires Node >=22.18
+      - run: npm ci
+      - run: npm run build # tsdown build --publint --attw
+      - run: npx attw --pack --profile node16
+      - run: npx publint
+      - run: npm publish --dry-run
+      - run: test -x dist/platform-map.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/
+            package.json
+
+  test:
+    needs: [build]
+    strategy:
+      matrix:
+        runtime: [node20, node22, bun]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: dist }
+      - if: matrix.runtime != 'bun'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.runtime == 'node20' && '20' || '22' }}
+      - if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: npm ci --omit=dev
+      - if: matrix.runtime != 'bun'
+        run: node --test test/
+      - if: matrix.runtime == 'bun'
+        run: bun test test/
