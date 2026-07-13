@@ -88,7 +88,12 @@ function orderedSignals(signals: UnitSignals): Record<string, unknown> {
     packageName: signals.packageName,
     hasDockerfile: signals.hasDockerfile,
     hasDeployConfig: signals.hasDeployConfig,
-    languages: signals.languages,
+    // WR-05: defensively re-sorted, same as every other array this module
+    // handles — a future producer could derive this from Set iteration
+    // order or similar non-deterministic sources.
+    languages: signals.languages
+      ? [...signals.languages].sort(compare)
+      : signals.languages,
     packageManager: signals.packageManager,
     workspaceInDegree: signals.workspaceInDegree,
     workspaceOutDegree: signals.workspaceOutDegree,
@@ -108,7 +113,9 @@ function orderedUnit(unit: Unit): Record<string, unknown> {
     units: unit.units.map(orderedUnit),
     signals: orderedSignals(unit.signals),
     role: unit.role,
-    sources: unit.sources,
+    // WR-05: defensively re-sorted, same as every other array this module
+    // handles (see orderedSignals' `languages` above).
+    sources: [...unit.sources].sort(compare),
   };
 }
 

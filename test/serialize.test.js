@@ -195,6 +195,24 @@ test("diagnostics are ordered error > warning > info, then code, then path", () 
   );
 });
 
+test("Unit.sources and UnitSignals.languages are sorted defensively (WR-05)", () => {
+  const pm = buildPlatformMap();
+  pm.units[0].sources = ["spec-engine.member.json", "df-config.json"];
+  pm.units[0].signals = {
+    ...pm.units[0].signals,
+    languages: ["ts", "py", "js"],
+  };
+
+  const json = toJSON(pm);
+  const parsed = JSON.parse(json);
+  const webapp = parsed.units.find((u) => u.name === "packages/webapp");
+  assert.deepEqual(webapp.sources, [
+    "df-config.json",
+    "spec-engine.member.json",
+  ]);
+  assert.deepEqual(webapp.signals.languages, ["js", "py", "ts"]);
+});
+
 test("nested units[] are sorted recursively by name", () => {
   const json = toJSON(buildPlatformMap());
   const parsed = JSON.parse(json);
