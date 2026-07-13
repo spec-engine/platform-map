@@ -151,6 +151,14 @@ export function detect(root: string, opts: DetectOptions = {}): Detection {
     };
   }
 
+  // scanSiblings() also returns `diagnostics` (e.g. a genuine
+  // UNIT_PATH_ESCAPE from a hostile readdir entry escaping the scan
+  // directory itself — see scan.ts), which are intentionally discarded
+  // here: this mirrors readJsonObject's malformed-JSON deferral above —
+  // Detection (types.ts) carries no diagnostics field of its own in this
+  // phase, so there is no path for this information to reach a caller yet.
+  // Phase 2's map() is where diagnostics get a first-class home in
+  // PlatformMap.
   const { siblings } = scanSiblings(root, opts.scanRoot ?? "..", opts.ignore);
   if (siblings.length > 0) {
     return { mode: "multi-repo", siblings, orchestrator };
