@@ -4,6 +4,9 @@
 // (DET-05) — these are standalone unit tests of the primitive itself.
 
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { test } from "node:test";
 import { boundedExec } from "../dist/internal/exec.mjs";
 
@@ -66,6 +69,49 @@ test("stdout is capped so a hostile/misbehaving child can't grow it unbounded (W
     result.stdout.length <= 64 * 1024,
     `expected stdout to be capped at 64KB, got ${result.stdout.length} bytes`,
   );
+});
+
+test("a child that ignores SIGTERM is escalated to SIGKILL after a grace period (WR-04)", async () => {
+  const pidFile = path.join(
+    os.tmpdir(),
+    `platform-map-wr04-${process.pid}-${Date.now()}.pid`,
+  );
+  try {
+    // `sh` (not `node -e`) so the child is guaranteed to have installed its
+    // SIGTERM trap and written its own pid essentially instantly — a `node`
+    // subprocess's own startup latency is variable enough (V8 init) that a
+    // tight timeoutMs could race the OS default-killing an as-yet-unready
+    // process before it ever gets to ignore SIGTERM.
+    const result = await boundedExec(
+      "/bin/sh",
+      ["-c", `trap '' TERM; echo $$ > ${pidFile}; sleep 20`],
+      process.cwd(),
+      150,
+    );
+    assert.equal(result.ok, false);
+
+    const pid = Number(fs.readFileSync(pidFile, "utf8"));
+    // The child ignores SIGTERM, so only the SIGKILL escalation (~500ms
+    // after the initial timeout) can end it. Poll for its death.
+    const deadline = Date.now() + 5000;
+    let alive = true;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(pid, 0);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      } catch {
+        alive = false;
+        break;
+      }
+    }
+    assert.equal(
+      alive,
+      false,
+      "expected the SIGTERM-ignoring child to eventually be SIGKILLed",
+    );
+  } finally {
+    fs.rmSync(pidFile, { force: true });
+  }
 });
 
 test("a fast successful close resolves well before a long timeoutMs elapses (timer is cleared, not just outraced)", async () => {
