@@ -51,6 +51,23 @@ test("a real fast command resolves { ok:true, stdout } (degrades gracefully if g
   }
 });
 
+test("stdout is capped so a hostile/misbehaving child can't grow it unbounded (WR-03)", async () => {
+  // Writes far more than the 64KB cap, well within the timeout window, then
+  // exits cleanly — proves the cap applies to a live, still-running child
+  // (not just a truncation-on-timeout hack).
+  const result = await boundedExec(
+    process.execPath,
+    ["-e", "process.stdout.write('x'.repeat(2 * 1024 * 1024))"],
+    process.cwd(),
+    2000,
+  );
+  assert.equal(result.ok, true);
+  assert.ok(
+    result.stdout.length <= 64 * 1024,
+    `expected stdout to be capped at 64KB, got ${result.stdout.length} bytes`,
+  );
+});
+
 test("a fast successful close resolves well before a long timeoutMs elapses (timer is cleared, not just outraced)", async () => {
   // timeoutMs is deliberately huge (5000ms). If `clearTimeout` were missing
   // on the `close` branch, the promise would still resolve promptly here

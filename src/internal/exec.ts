@@ -25,6 +25,11 @@ export interface BoundedExecResult {
   ok: boolean;
 }
 
+// WR-03: caps accumulated stdout so a hostile/misbehaving child can't grow
+// `out` unbounded within the timeout window — resource exhaustion is part
+// of this primitive's own stated threat model (see header comment above).
+const MAX_STDOUT_BYTES = 64 * 1024;
+
 /**
  * Runs `cmd args` in `cwd`, bounded by `timeoutMs` (default 2000ms). On
  * timeout, sends SIGTERM and resolves `{ stdout:"", ok:false }`. On a
@@ -51,7 +56,7 @@ export function boundedExec(
     }, timeoutMs);
 
     child.stdout?.on("data", (d: Buffer) => {
-      out += d;
+      if (out.length < MAX_STDOUT_BYTES) out += d;
     });
 
     child.on("close", (code) => {
