@@ -105,11 +105,21 @@ test("toDepGraph: EVERY workspace-package is a key, leaves get an empty Set", ()
   assert.equal(g.get("core").size, 0);
 });
 
-test("toDepGraph: recurses into nested monorepo units", () => {
-  const pm = pmOf(
-    [wp("root", [wp("root/a"), wp("root/b")])],
-    [["root/a", "root/b"]],
-  );
+test("toDepGraph: recurses into nested monorepo, collects only workspace-packages", () => {
+  // The monorepo container is kind:"repo" (not a workspace-package); only its
+  // nested workspace-packages are graph nodes.
+  const container = {
+    name: "root",
+    path: "root",
+    kind: "repo",
+    mode: "monorepo",
+    ref: "main",
+    units: [wp("root/a"), wp("root/b")],
+    signals: {},
+    role: "unknown",
+    sources: ["pnpm-workspace.yaml"],
+  };
+  const pm = pmOf([container], [["root/a", "root/b"]]);
   const g = graph(pm).toDepGraph();
   assert.deepEqual([...g.keys()].sort(), ["root/a", "root/b"]);
   assert.deepEqual([...g.get("root/a")], ["root/b"]);

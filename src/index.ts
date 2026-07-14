@@ -4,6 +4,7 @@
 
 export { detect } from "./detect.js";
 export { MalformedConfigError, RootNotFoundError } from "./errors.js";
+export { graph } from "./graph.js";
 // toJSON/serialize are an intentional additive public extension beyond
 // DESIGN.md's original §4 function list — see README's "Determinism" section.
 // They give the dual ESM+CJS build a real runtime export to validate (not
@@ -19,6 +20,7 @@ export type {
   Edge,
   MapOptions,
   Mode,
+  PlatformGraph,
   PlatformMap,
   PlatformMapConfig,
   Role,
