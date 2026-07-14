@@ -1,0 +1,9 @@
+{
+  "name": "pkg-b",
+  "scripts": {
+    "start": "node ."
+  },
+  "dependencies": {
+    "pkg-a": "workspace:*"
+  }
+}
