@@ -102,8 +102,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22 # trusted publishing floor: npm CLI >=11.5.1 / Node >=22.14.0
+          node-version: 22
           registry-url: https://registry.npmjs.org
+      # OIDC trusted publishing + provenance require npm >= 11.5.1. Node 22
+      # bundles npm 10.9.x (NOT >= 11.5.1), so upgrade npm explicitly before
+      # publishing — otherwise keyless publish falls back to token auth and
+      # fails ENEEDAUTH. Node >=22.14.0 alone does NOT satisfy the npm floor.
+      - run: npm install -g npm@^11.5.1
+      - run: npm --version # assert the upgrade took (must be >= 11.5.1)
       - run: npm ci
       - run: npm run build
       - run: npm publish # keyless OIDC (no stored token) + automatic provenance
