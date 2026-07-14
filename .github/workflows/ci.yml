@@ -110,6 +110,13 @@ jobs:
       # fails ENEEDAUTH. Node >=22.14.0 alone does NOT satisfy the npm floor.
       - run: npm install -g npm@^11.5.1
       - run: npm --version # assert the upgrade took (must be >= 11.5.1)
-      - run: npm ci
-      - run: npm run build
+      # WR-02: publish the EXACT dist/ the build job produced and the test job
+      # validated — download that artifact instead of rebuilding, so the
+      # published tarball cannot drift from what passed the pre-release gate
+      # (build --publint/--attw + test + cold-install-smoke). Provenance still
+      # attaches: OIDC provenance needs a trusted CI publish context, not an
+      # in-job rebuild. LICENSE/README come from the checkout; dist/ + the
+      # validated package.json come from the artifact.
+      - uses: actions/download-artifact@v4
+        with: { name: dist }
       - run: npm publish # keyless OIDC (no stored token) + automatic provenance
