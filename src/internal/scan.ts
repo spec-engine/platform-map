@@ -108,8 +108,10 @@ export function scanSiblings(
         .relative(resolvedPlatformRoot, absoluteEntryPath)
         .split(path.sep)
         .join("/"),
-      ref: null, // DET-05: no git subprocess here — populated by Phase 2's siblings adapter
-      hasDfPointer: existsAt(absoluteEntryPath, "df-config.json"),
+      ref: null, // DET-05: no git subprocess here — map()'s per-unit loop runs the MODEL-06 ref probe
+      // Pitfall 6: the DF pointer lives at the STATE_DIR convention
+      // <sibling>/.factory/df-config.json, NOT a bare <sibling>/df-config.json.
+      hasDfPointer: existsAt(absoluteEntryPath, ".factory/df-config.json"),
       conflict: null,
     });
   }

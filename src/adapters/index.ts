@@ -22,6 +22,7 @@ import type {
   Mode,
   UnitSignals,
 } from "../types.js";
+import { siblingsAdapter } from "./siblings.js";
 import { workspaceAdapter } from "./workspace.js";
 
 /** Everything an adapter needs, computed once by map() and shared read-only.
@@ -79,10 +80,12 @@ export const PRECEDENCE: Array<AdapterName | "caller"> = [
 ];
 
 /** Registered adapter functions. The workspace adapter (CFG-06) is wired here
- *  in plan 02-02; canonical/dark-factory/spec-engine/siblings arrive in later
- *  Phase-2 plans with no change to this contract. */
+ *  in plan 02-02 and the siblings adapter (CFG-07) in plan 02-03;
+ *  canonical/dark-factory/spec-engine arrive in later Phase-2 plans with no
+ *  change to this contract. */
 const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
   workspace: workspaceAdapter,
+  siblings: siblingsAdapter,
 };
 
 /**

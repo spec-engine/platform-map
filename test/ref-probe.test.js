@@ -44,33 +44,29 @@ function rm(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-test(
-  "probeRef strips the origin/ prefix from origin/HEAD -> the bare branch name",
-  { skip: skipNoGit },
-  async () => {
-    const dir = mkTempRepo("refs/remotes/origin/main");
-    try {
-      assert.equal(await probeRef(dir), "main");
-    } finally {
-      rm(dir);
-    }
-  },
-);
+test("probeRef strips the origin/ prefix from origin/HEAD -> the bare branch name", {
+  skip: skipNoGit,
+}, async () => {
+  const dir = mkTempRepo("refs/remotes/origin/main");
+  try {
+    assert.equal(await probeRef(dir), "main");
+  } finally {
+    rm(dir);
+  }
+});
 
-test(
-  "probeRef returns null (never 'origin/HEAD') when origin/HEAD is unset (no remote / detached)",
-  { skip: skipNoGit },
-  async () => {
-    const dir = mkTempRepo(null);
-    try {
-      const ref = await probeRef(dir);
-      assert.equal(ref, null);
-      assert.notEqual(ref, "origin/HEAD");
-    } finally {
-      rm(dir);
-    }
-  },
-);
+test("probeRef returns null (never 'origin/HEAD') when origin/HEAD is unset (no remote / detached)", {
+  skip: skipNoGit,
+}, async () => {
+  const dir = mkTempRepo(null);
+  try {
+    const ref = await probeRef(dir);
+    assert.equal(ref, null);
+    assert.notEqual(ref, "origin/HEAD");
+  } finally {
+    rm(dir);
+  }
+});
 
 test("probeRef returns null when the repo dir does not exist (spawn ENOENT) and never throws", async () => {
   const missing = path.join(

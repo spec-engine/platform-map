@@ -7,6 +7,7 @@
 // map() is exported from dist/index.mjs these assertions fail (map undefined).
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -19,6 +20,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(here, "fixtures");
 const singleRepo = path.join(fixturesDir, "single-repo");
 const monorepoPnpm = path.join(fixturesDir, "monorepo-pnpm");
+
+function gitAvailable() {
+  try {
+    return spawnSync("git", ["--version"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+}
+const GIT = gitAvailable();
 
 // ── CFG-03: single-repo happy path ─────────────────────────────────────────
 
@@ -161,6 +171,90 @@ test("map() monorepo output is byte-identical across two invocations", async () 
   const a = toJSON(await map(monorepoPnpm));
   const b = toJSON(await map(monorepoPnpm));
   assert.equal(a, b);
+});
+
+// ── CFG-07/MODEL-06: zero-config multi-repo — sibling promotion + ref probe ─
+
+test("map() promotes zero-config sibling repos to units with map()-resolved refs (CFG-07/MODEL-06)", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-multi-"));
+  try {
+    // repo-a: a real git repo whose origin/HEAD -> main, so the map()-loop probe
+    // resolves ref:"main" (when git is available); otherwise a bare .git marker.
+    const repoA = path.join(parent, "repo-a");
+    fs.mkdirSync(repoA);
+    let expectA = null;
+    if (GIT) {
+      spawnSync("git", ["init", "-q"], { cwd: repoA, stdio: "ignore" });
+      spawnSync(
+        "git",
+        [
+          "symbolic-ref",
+          "refs/remotes/origin/HEAD",
+          "refs/remotes/origin/main",
+        ],
+        { cwd: repoA, stdio: "ignore" },
+      );
+      expectA = "main";
+    } else {
+      fs.mkdirSync(path.join(repoA, ".git"));
+    }
+
+    // repo-b: a bare .git marker (an "absent git repo") — the ref probe must
+    // degrade it to ref:null promptly and never stall the batch (T-02-10).
+    const repoB = path.join(parent, "repo-b");
+    fs.mkdirSync(path.join(repoB, ".git"), { recursive: true });
+
+    // workdir: a plain, non-repo child we point map() at; detect() then finds
+    // repo-a/repo-b as its siblings (default scanRoot "..").
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const pm = await map(workdir);
+    assert.equal(pm.mode, "multi-repo");
+
+    const names = pm.units.map((u) => u.name).sort();
+    assert.deepEqual(names, ["repo-a", "repo-b"]);
+    for (const unit of pm.units) {
+      // canonicalDeclaredUnits is false -> provisional siblings are promoted.
+      assert.equal(unit.kind, "repo");
+      assert.ok(unit.sources.includes("siblings"));
+      // ref is a string or null, never the literal "origin/HEAD".
+      assert.ok(unit.ref === null || typeof unit.ref === "string");
+      assert.notEqual(unit.ref, "origin/HEAD");
+    }
+
+    const a = pm.units.find((u) => u.name === "repo-a");
+    const b = pm.units.find((u) => u.name === "repo-b");
+    assert.equal(a.ref, expectA);
+    assert.equal(b.ref, null);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("map() resolves a sibling's ref:null concurrently without stalling on an absent-git repo", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-multi-"));
+  try {
+    // Three bare-.git-marker siblings: none is a real repo, so every probe
+    // degrades to null. The whole map() must still resolve promptly.
+    for (const name of ["a", "b", "c"]) {
+      fs.mkdirSync(path.join(parent, name, ".git"), { recursive: true });
+    }
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const start = Date.now();
+    const pm = await map(workdir);
+    assert.ok(
+      Date.now() - start < 10000,
+      "map() must resolve within the bounded probe window",
+    );
+    assert.equal(pm.mode, "multi-repo");
+    assert.deepEqual(pm.units.map((u) => u.name).sort(), ["a", "b", "c"]);
+    for (const unit of pm.units) assert.equal(unit.ref, null);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
 });
 
 // ── SEC-01: nonexistent root is the only throw path so far ─────────────────

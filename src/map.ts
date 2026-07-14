@@ -29,6 +29,7 @@ import { workspaceAdapter } from "./adapters/workspace.js";
 import { detect } from "./detect.js";
 import { RootNotFoundError } from "./errors.js";
 import { resolveWithinRoot } from "./internal/path-guard.js";
+import { probeRef } from "./internal/ref-probe.js";
 import { serialize } from "./internal/serialize.js";
 import { merge } from "./merge.js";
 import { censusSignals } from "./signals.js";
@@ -217,6 +218,23 @@ export async function map(
   for (const unit of merged.units) {
     enrichUnit(root, unit, 0, extraDiagnostics);
   }
+
+  // MODEL-06: map()'s per-unit loop — NOT the siblings adapter — owns the
+  // default-branch ref probe, so it applies UNIFORMLY to every resolved
+  // kind:"repo" unit (siblings, canonical-declared, DF-declared). A ref a
+  // source authoritatively declared is left untouched (declared ref wins); only
+  // units still at ref:null after merge are probed. Probes run CONCURRENTLY,
+  // each bounded by probeRef's own timeout, so one hostile/slow repo degrades
+  // to ref:null and never stalls the batch (T-02-10). probeRef never rejects
+  // (it collapses every failure to null), so Promise.all is safe.
+  // kind:"workspace-package" units are NEVER probed.
+  await Promise.all(
+    merged.units
+      .filter((unit) => unit.kind === "repo" && unit.ref === null)
+      .map(async (unit) => {
+        unit.ref = await probeRef(path.join(root, unit.path));
+      }),
+  );
 
   const pm: PlatformMap = {
     // basename() never leaks an absolute path; fall back to a fixed placeholder
