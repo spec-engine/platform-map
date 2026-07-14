@@ -1,0 +1,10 @@
+{
+  "name": "@se/webapp",
+  "private": true,
+  "scripts": {
+    "start": "node ."
+  },
+  "dependencies": {
+    "@se/shared": "workspace:*"
+  }
+}

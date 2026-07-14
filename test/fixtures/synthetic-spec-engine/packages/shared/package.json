@@ -1,0 +1,7 @@
+{
+  "name": "@se/shared",
+  "private": true,
+  "exports": {
+    ".": "./index.js"
+  }
+}
