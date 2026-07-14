@@ -40,6 +40,8 @@
   "scripts": {
     "build": "tsdown",
     "test": "node --test",
+    "test:bun": "bun test test-bun/",
+    "smoke:cold-install": "npm run build && node scripts/cold-install-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "biome ci ."
   },
