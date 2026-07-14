@@ -11,12 +11,15 @@ export { RootNotFoundError } from "./errors.js";
 // on for byte-identical output.
 export { serialize, toJSON } from "./internal/serialize.js";
 export type {
+  AdapterName,
   Detection,
   DetectOptions,
   Diagnostic,
   Edge,
+  MapOptions,
   Mode,
   PlatformMap,
+  PlatformMapConfig,
   Role,
   Unit,
   UnitSignals,

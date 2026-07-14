@@ -35,4 +35,16 @@ export default defineConfig([
     outDir: "dist/internal",
     clean: false,
   },
+  {
+    // Adapter test-build seam (Phase 2): src/adapters/*.ts modules emit to
+    // dist/adapters/*.mjs so test/*.test.js can import the built registry/
+    // adapters directly, without appearing in the public `exports` map. The
+    // src/internal/*.ts glob above does NOT reach this subdirectory, so this
+    // entry is required (02-RESEARCH.md build-config task).
+    entry: ["src/adapters/*.ts"],
+    format: ["esm"],
+    dts: false,
+    outDir: "dist/adapters",
+    clean: false,
+  },
 ]);

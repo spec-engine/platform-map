@@ -126,3 +126,43 @@ export interface Detection {
     conflict: string | null;
   }>;
 }
+
+// ── map() contract (DESIGN.md §3/§4) ──────────────────────────────────────
+/** The five source adapters, in the fixed precedence identity used across the
+ *  registry, merge reducer, and MapOptions toggles. `"caller"` (injected
+ *  MapOptions.units) is NOT an adapter — it ranks between canonical and
+ *  dark-factory but has no adapter function, so it is deliberately excluded
+ *  from this union (see adapters/index.ts PRECEDENCE). */
+export type AdapterName =
+  | "canonical"
+  | "dark-factory"
+  | "spec-engine"
+  | "workspace"
+  | "siblings";
+
+/** Shape of an optional, authoritative `platform-map.json` canonical config
+ *  (DESIGN.md §3). Every field is optional — config is optional forever (D8).
+ *  Unknown top-level keys are ignored (forward-compat); known-key shapes are
+ *  validated strictly by config.ts (Phase 2 plan 04). */
+export interface PlatformMapConfig {
+  /** Overrides PlatformMap.name (else basename(root)). */
+  name?: string;
+  /** Explicit unit declarations. Presence of a non-empty array gates the
+   *  sibling-promotion rule ("config disposes"): declared units[] turns
+   *  unconfirmed siblings into UNCONFIGURED_SIBLING diagnostics. */
+  units?: Array<{ name: string; path: string; ref?: string }>;
+  /** Additional ignore globs, merged with adapter-supplied ignores. */
+  ignore?: string[];
+  /** Per-unit role overrides, applied when deriveRole() runs (Phase 3). */
+  overrides?: Record<string, { role?: Role }>;
+}
+
+/** Options for map() (DESIGN.md §4). Extends DetectOptions (scanRoot/ignore)
+ *  with the two config-optional levers: per-adapter disable toggles (CFG-09)
+ *  and caller-injected units that enter merge as source:"caller". */
+export interface MapOptions extends DetectOptions {
+  /** Disable a named adapter by setting it to false; omitted/true = enabled. */
+  adapters?: Partial<Record<AdapterName, boolean>>;
+  /** Units injected by the caller; ranked below canonical, above dark-factory. */
+  units?: Array<{ name: string; path: string; ref?: string }>;
+}
