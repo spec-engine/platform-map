@@ -36,6 +36,17 @@ export default defineConfig([
     clean: false,
   },
   {
+    // Top-level pure/internal module test-build seam (Phase 2): src/merge.ts
+    // (and later src/signals.ts, src/config.ts) emit to dist/*.mjs so
+    // test/*.test.js can import the built artifact directly, without appearing
+    // in the public `exports` map (02-RESEARCH.md build-config task).
+    entry: ["src/merge.ts"],
+    format: ["esm"],
+    dts: false,
+    outDir: "dist",
+    clean: false,
+  },
+  {
     // Adapter test-build seam (Phase 2): src/adapters/*.ts modules emit to
     // dist/adapters/*.mjs so test/*.test.js can import the built registry/
     // adapters directly, without appearing in the public `exports` map. The
