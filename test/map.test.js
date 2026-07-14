@@ -165,6 +165,56 @@ test("map() recurses into a nested monorepo (DET-02) with workspace-only childre
   assert.deepEqual(leaf.sources, ["workspace"]);
 });
 
+// WR-03: DET-02 composability — a promoted kind:"repo" constituent that is
+// itself a monorepo must report mode:"monorepo" at its own node with its
+// workspace-package children expanded (workspace-only, never phantom sub-units).
+test("map() expands a multi-repo constituent that is itself a monorepo to mode:monorepo (WR-03/DET-02)", async () => {
+  const parent = fs.mkdtempSync(
+    path.join(os.tmpdir(), "platform-map-monosib-"),
+  );
+  try {
+    // A sibling repo (has .git) that is ALSO a pnpm monorepo of its own.
+    const monoSib = path.join(parent, "mono-sib");
+    fs.mkdirSync(path.join(monoSib, ".git"), { recursive: true });
+    fs.writeFileSync(
+      path.join(monoSib, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    const innerPkg = path.join(monoSib, "packages", "inner-pkg");
+    fs.mkdirSync(innerPkg, { recursive: true });
+    fs.writeFileSync(
+      path.join(innerPkg, "package.json"),
+      JSON.stringify({ name: "inner-pkg" }),
+    );
+
+    // A plain non-repo workdir map() is pointed at; detect() finds mono-sib as
+    // its sibling (default scanRoot "..") -> multi-repo at the top node.
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const pm = await map(workdir);
+    assert.equal(pm.mode, "multi-repo");
+
+    const sib = pm.units.find((u) => u.name === "mono-sib");
+    assert.ok(sib, "the monorepo sibling is promoted to a unit");
+    assert.equal(sib.kind, "repo");
+    assert.equal(
+      sib.mode,
+      "monorepo",
+      "a repo constituent that is itself a monorepo reports mode:monorepo (WR-03)",
+    );
+    assert.equal(sib.units.length, 1, "its workspace child is expanded");
+    const [child] = sib.units;
+    assert.equal(child.name, "packages/inner-pkg");
+    assert.equal(child.kind, "workspace-package");
+    // Workspace-expansion-only: the child comes solely from the workspace
+    // adapter — never a phantom sibling/DF/SE sub-unit.
+    assert.deepEqual(child.sources, ["workspace"]);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("map() surfaces UNMATCHED_PATTERN (not a throw) when a workspace glob matches nothing", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-map-"));
   try {

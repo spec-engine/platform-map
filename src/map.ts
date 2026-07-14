@@ -12,10 +12,11 @@
 // Plan 02-01 shipped the integration-neutral core (detect -> adapters ->
 // merge -> serialize). Plan 02-02 adds the map-owned per-unit fs signal census
 // and DET-02 monorepo recursion on top: after merge(), every resolved unit is
-// enriched with censusSignals(), and a workspace-package that detect() reports
-// as its own monorepo has its units[] expanded via the workspace adapter ONLY
-// (never the root-level canonical/DF/SE/siblings adapters). Still deliberately
-// NOT here: edges (Phase 3, edges is []) and role (Phase 3, seeded "unknown").
+// enriched with censusSignals(), and any resolved unit — a workspace-package OR
+// a promoted kind:"repo" constituent (WR-03) — that detect() reports as its own
+// monorepo has its units[] expanded via the workspace adapter ONLY (never the
+// root-level canonical/DF/SE/siblings adapters). Still deliberately NOT here:
+// edges (Phase 3, edges is []) and role (Phase 3, seeded "unknown").
 
 import * as path from "node:path";
 import type {
@@ -98,11 +99,14 @@ function applyCensusSignals(unit: Unit, census: UnitSignals): void {
 
 /**
  * Enriches a resolved unit in place: runs the map-owned signal census over its
- * directory, then — for a workspace-package that detect() reports as its own
- * monorepo — expands ONLY its workspace-package children (the workspace adapter
- * + census, never the root-level canonical/DF/SE/siblings adapters) into
- * unit.units[]. This is DET-02 composability, bounded by the recursion depth.
- * All diagnostics (census + nested expansion) are threaded into `diagnostics`.
+ * directory, then — for ANY resolved unit (a workspace-package OR a promoted
+ * kind:"repo" constituent, WR-03) that detect() reports as its own monorepo —
+ * expands ONLY its workspace-package children (the workspace adapter + census,
+ * never the root-level canonical/DF/SE/siblings adapters) into unit.units[] and
+ * corrects unit.mode to "monorepo". This is DET-02 composability ("a multi-repo
+ * constituent that is itself a monorepo is reported as mode:monorepo at its own
+ * node"), bounded by the recursion depth. All diagnostics (census + nested
+ * expansion) are threaded into `diagnostics`.
  */
 function enrichUnit(
   root: string,
@@ -120,7 +124,13 @@ function enrichUnit(
   for (const d of census.diagnostics) diagnostics.push(d);
 
   if (depth >= MAX_MONOREPO_RECURSION_DEPTH) return;
-  if (unit.kind !== "workspace-package") return;
+
+  // WR-03: DET-02 composability applies to a promoted kind:"repo" constituent
+  // that is itself a monorepo (the headline multi-repo→monorepo case), not just
+  // to workspace-package children — so BOTH kinds run the detect() probe below.
+  // Recursion stays workspace-expansion-only (workspaceAdapter, never the
+  // root-level registry) regardless of the parent's kind, and a non-monorepo
+  // unit early-returns before its mode/units are touched.
 
   // detect() on the child's own path is DET-02 composability, not
   // self-recursion. It can only throw RootNotFoundError (a resolved unit dir
