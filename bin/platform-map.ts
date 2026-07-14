@@ -9,6 +9,7 @@
 // is injected at build time (__CLI_VERSION__), never read from package.json here.
 
 import {
+  detect,
   MalformedConfigError,
   map,
   RootNotFoundError,
@@ -16,9 +17,11 @@ import {
 } from "../src/index.js";
 import {
   exitFor,
+  graphProjection,
   help,
   parseArgs,
   renderTree,
+  toDot,
   usage,
 } from "../src/internal/cli-render.js";
 import type { PlatformMap } from "../src/types.js";
@@ -49,18 +52,38 @@ async function main(): Promise<number> {
     return 0;
   }
   try {
-    // This slice implements the default (map) path only; detect/graph/init land
-    // in later plans as their own switch arms.
-    const pm = await map(a.dir);
-    if (a.json) {
-      // --json: deterministic toJSON to stdout, NOTHING to stderr (SC2).
-      process.stdout.write(`${toJSON(pm)}\n`);
-    } else {
-      // human: tree to stdout, diagnostics to stderr (SC2).
-      process.stdout.write(`${renderTree(pm)}\n`);
-      writeDiagnostics(pm);
+    switch (a.command) {
+      case "detect": {
+        // detect() is SYNC and carries no diagnostics (0-or-throw): pretty JSON
+        // to stdout, nothing to stderr. A bad root throws → caught below → exit 1.
+        process.stdout.write(`${JSON.stringify(detect(a.dir), null, 2)}\n`);
+        return 0;
+      }
+      case "graph": {
+        // graph ran map() → diagnostics route to stderr and exitFor(pm) sets the
+        // code. --dot emits DOT; otherwise the {nodes,edges,roots,leaves,cycles}
+        // projection. Both render from serialize(pm)/graph(pm) — the CLI never sorts.
+        const pm = await map(a.dir);
+        process.stdout.write(
+          `${a.dot ? toDot(pm) : JSON.stringify(graphProjection(pm), null, 2)}\n`,
+        );
+        writeDiagnostics(pm);
+        return exitFor(pm);
+      }
+      default: {
+        // default (map) path; init lands in a later plan as its own arm.
+        const pm = await map(a.dir);
+        if (a.json) {
+          // --json: deterministic toJSON to stdout, NOTHING to stderr (SC2).
+          process.stdout.write(`${toJSON(pm)}\n`);
+        } else {
+          // human: tree to stdout, diagnostics to stderr (SC2).
+          process.stdout.write(`${renderTree(pm)}\n`);
+          writeDiagnostics(pm);
+        }
+        return exitFor(pm);
+      }
     }
-    return exitFor(pm);
   } catch (e) {
     if (e instanceof RootNotFoundError || e instanceof MalformedConfigError) {
       process.stderr.write(`${e.message}\n`);

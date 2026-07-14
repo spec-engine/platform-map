@@ -216,7 +216,11 @@ const EDGES = [
 test("toDot emits digraph header/footer + one arrow per edge in serialize order", () => {
   const out = toDot(buildEdgeMap(EDGE_UNITS, EDGES));
   const lines = out.split("\n");
-  assert.equal(lines[0], "digraph platform {", "first line is the digraph header");
+  assert.equal(
+    lines[0],
+    "digraph platform {",
+    "first line is the digraph header",
+  );
   assert.equal(lines[lines.length - 1], "}", "last line closes the digraph");
   // serialize() sorts edges by (from,to): a->c precedes b->a regardless of input.
   assert.equal(lines[1], '  "a" -> "c";');
@@ -258,7 +262,9 @@ test("graphProjection is JSON-serializable (no raw Map/Set leaked)", () => {
 });
 
 test("graphProjection is byte-stable across shuffled input of the same logical map", () => {
-  const ordered = JSON.stringify(graphProjection(buildEdgeMap(EDGE_UNITS, EDGES)));
+  const ordered = JSON.stringify(
+    graphProjection(buildEdgeMap(EDGE_UNITS, EDGES)),
+  );
   const shuffled = JSON.stringify(
     graphProjection(
       buildEdgeMap(

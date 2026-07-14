@@ -11,7 +11,8 @@
 // Auto-built to dist/internal/cli-render.mjs by tsdown entry #3
 // (`src/internal/*.ts`) — no tsdown.config.ts change is needed for THIS module.
 
-import type { PlatformMap, Unit } from "../types.js";
+import { graph } from "../graph.js";
+import type { Edge, PlatformMap, Unit } from "../types.js";
 import { serialize } from "./serialize.js";
 
 /** The four dispatchable commands. `map` is the default (no subcommand token). */
@@ -123,6 +124,65 @@ export function renderTree(pm: PlatformMap): string {
  */
 export function exitFor(pm: PlatformMap): number {
   return pm.diagnostics.some((d) => d.severity === "error") ? 2 : 0;
+}
+
+/**
+ * The `graph` projection shape (CLI-03, Open Q1): a fully JSON-serializable
+ * object — never the PlatformGraph itself (its toDepGraph() returns Map/Set,
+ * which JSON.stringify would silently drop). `edges` is serialize(pm).edges
+ * verbatim; roots/leaves/cycles are the already-sorted graph(pm) views.
+ */
+export interface GraphProjection {
+  nodes: string[];
+  edges: Edge[];
+  roots: string[];
+  leaves: string[];
+  cycles: string[][];
+}
+
+/**
+ * Minimal Graphviz DOT for `graph --dot` (CLI-03). Renders from serialize(pm)'s
+ * (from,to)-sorted edge set — the CLI never sorts. Endpoint names are quoted via
+ * JSON.stringify (correct escaping, no DOT-grammar injection; T-04-05). A
+ * zero-edge map yields an empty-bodied `digraph platform {\n}`. Zero I/O, no
+ * trailing newline (the dispatcher appends exactly one).
+ */
+export function toDot(pm: PlatformMap): string {
+  const s = serialize(pm);
+  const lines = ["digraph platform {"];
+  for (const e of s.edges) {
+    lines.push(`  ${JSON.stringify(e.from)} -> ${JSON.stringify(e.to)};`);
+  }
+  lines.push("}");
+  return lines.join("\n");
+}
+
+/**
+ * Builds the deterministic `graph` projection (CLI-03). `nodes` is the flattened,
+ * lexically-sorted list of every unit name (recursing units[]); `edges` reuses
+ * serialize(pm).edges; roots/leaves/cycles reuse the already-sorted graph(pm)
+ * views — the CLI never traverses edges or re-sorts them (CLI-06 / determinism).
+ * Fully JSON-serializable: only string[]/Edge[]/string[][], never Map/Set.
+ */
+export function graphProjection(pm: PlatformMap): GraphProjection {
+  const s = serialize(pm);
+  const g = graph(s);
+  const nodes: string[] = [];
+  const collect = (list: Unit[]): void => {
+    for (const u of list) {
+      nodes.push(u.name);
+      if (u.units.length > 0) collect(u.units);
+    }
+  };
+  collect(s.units);
+  nodes.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    nodes,
+    edges: s.edges,
+    roots: g.roots(),
+    leaves: g.leaves(),
+    cycles: g.cycles(),
+  };
 }
 
 /** Short usage/synopsis line (to stderr on a usage error). */
