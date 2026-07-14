@@ -73,6 +73,29 @@ export interface Edge {
   // exists so v2 source-import edges are additive
 }
 
+// ── PlatformGraph (pure view over a PlatformMap) ──────────────────────────
+/** The pure query view returned by graph(pm) (DESIGN.md §4 L180-189). Operates
+ *  only on pm.edges + pm.units — no I/O. Its toDepGraph() is the DF-compatible
+ *  seam Dark Factory's planWaves() consumes unmodified. All array results are
+ *  lexically sorted (plain `<`/`>`, never localeCompare) for determinism. */
+export interface PlatformGraph {
+  /** DF-compatible dependency graph: Map<unitName, Set<dependencyName>>, keyed
+   *  by dependent (Edge.from) → Set of dependency names (Edge.to). EVERY
+   *  workspace-package name is a key (empty Set for leaves). */
+  toDepGraph(): Map<string, Set<string>>;
+  /** Transitive dependency-closure of `name`, lexically sorted. */
+  dependenciesOf(name: string): string[];
+  /** Transitive dependent-closure of `name`, lexically sorted. */
+  dependentsOf(name: string): string[];
+  /** Names with in-degree 0 (app-shaped sinks), sorted. */
+  roots(): string[];
+  /** Names with out-degree 0 (foundation libraries), sorted. */
+  leaves(): string[];
+  /** [] when acyclic; else each cycle as lexically-sorted SCC membership.
+   *  Mirrors the CYCLE_SUSPECTED diagnostic byte-for-byte (shared scc.ts). */
+  cycles(): string[][];
+}
+
 // ── Diagnostics (never silently drop anything) ───────────────────────────
 export interface Diagnostic {
   code:
