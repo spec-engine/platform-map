@@ -8,6 +8,9 @@
 // to the caller-supplied `dir`, which map() path.resolves internally; the version
 // is injected at build time (__CLI_VERSION__), never read from package.json here.
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as readline from "node:readline/promises";
 import {
   detect,
   MalformedConfigError,
@@ -16,10 +19,12 @@ import {
   toJSON,
 } from "../src/index.js";
 import {
+  buildProposal,
   exitFor,
   graphProjection,
   help,
   parseArgs,
+  parseYesNo,
   renderTree,
   toDot,
   usage,
@@ -35,6 +40,52 @@ function writeDiagnostics(pm: PlatformMap): void {
   for (const d of pm.diagnostics) {
     process.stderr.write(`${d.message}\n`);
   }
+}
+
+// init — the ONE and ONLY write path in the entire package (SEC-05). Gated three
+// ways before the single write: refuse-if-exists (never clobber an authored file),
+// non-TTY-without-`--yes` (never hang a CI job on stdin), and a typed `N` (clean
+// decline, exit 0). The proposal prints to STDOUT (machine-consumable); the readline
+// prompt and every status/refuse line go to STDERR so stdout stays clean. The write
+// target is the FIXED basename path.join(dir, "platform-map.json") — the user
+// controls the directory, never the filename (SEC-05 / V12 / T-04-08).
+async function runInit(dir: string, yes: boolean): Promise<number> {
+  const configPath = path.join(dir, "platform-map.json");
+  if (fs.existsSync(configPath)) {
+    process.stderr.write(
+      "platform-map: platform-map.json already exists; refusing to overwrite\n",
+    );
+    return 1;
+  }
+  // detect() may throw RootNotFoundError → caught by main()'s try/catch → exit 1.
+  const detection = detect(dir);
+  const text = JSON.stringify(
+    buildProposal(detection, path.basename(path.resolve(dir))),
+    null,
+    2,
+  );
+  process.stdout.write(`${text}\n`);
+  if (!yes) {
+    if (!process.stdin.isTTY) {
+      process.stderr.write(
+        "platform-map: non-interactive; pass --yes to write\n",
+      );
+      return 1;
+    }
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stderr, // prompt → stderr; stdout stays the proposal
+    });
+    const answer = await rl.question("Write platform-map.json? [y/N] ");
+    rl.close();
+    if (!parseYesNo(answer)) {
+      process.stderr.write("platform-map: aborted\n");
+      return 0; // typed N is a clean decline, not an error
+    }
+  }
+  fs.writeFileSync(configPath, `${text}\n`); // THE ONE WRITE (SEC-05)
+  process.stderr.write("platform-map: wrote platform-map.json\n");
+  return 0;
 }
 
 async function main(): Promise<number> {
@@ -70,8 +121,12 @@ async function main(): Promise<number> {
         writeDiagnostics(pm);
         return exitFor(pm);
       }
+      case "init": {
+        // init: the single writer (SEC-05). All gating lives in runInit.
+        return await runInit(a.dir, a.yes);
+      }
       default: {
-        // default (map) path; init lands in a later plan as its own arm.
+        // default (map) path.
         const pm = await map(a.dir);
         if (a.json) {
           // --json: deterministic toJSON to stdout, NOTHING to stderr (SC2).

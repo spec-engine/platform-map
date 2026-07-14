@@ -289,7 +289,11 @@ test("graphProjection is byte-stable across shuffled input of the same logical m
 test("buildProposal single-repo → { name } only, no units key", () => {
   const p = buildProposal({ mode: "single-repo" }, "acme");
   assert.deepEqual(p, { name: "acme" });
-  assert.equal(Object.hasOwn(p, "units"), false, "no units key for single-repo");
+  assert.equal(
+    Object.hasOwn(p, "units"),
+    false,
+    "no units key for single-repo",
+  );
 });
 
 test("buildProposal monorepo → { name } only (workspace adapter re-discovers)", () => {
