@@ -3,6 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -58,5 +59,51 @@ jobs:
       - run: npm ci --omit=dev
       - if: matrix.runtime != 'bun'
         run: node --test
+      # D-05 amendment: node:test does not run unmodified under `bun test`
+      # (oven-sh/bun#5090 — "test() inside another test()"), falsifying
+      # 01-RESEARCH.md's original assumption. test/*.test.js stays node:test
+      # -only (Node 20/22 lanes above); this lane runs a separate bun:test
+      # smoke suite (test-bun/) against the built dist/ artifact instead,
+      # which still proves BUILD-04's intent under the real Bun runtime.
+      # See test-bun/smoke.bun.spec.mjs for the full rationale.
       - if: matrix.runtime == 'bun'
-        run: bun test
+        run: bun test test-bun/
+
+  # PUB-02: tarball cold-install smoke — packs the built package and installs
+  # the packed tarball into scratch Node-CJS + Bun projects (public exports +
+  # CLI bin only). The only job that catches a bundle-leak into an unshipped
+  # chunk; no live-registry access.
+  cold-install-smoke:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/cold-install-smoke.mjs
+
+  # PUB-01: release-triggered OIDC trusted publishing. Tag-gated; keyless —
+  # id-token:write mints the short-lived OIDC token; keyless — no stored token.
+  # Provenance auto-attaches from publishConfig.provenance:true. The @spec-engine
+  # trusted publisher must be registered on npmjs.com before the first tagged
+  # run (operator gate — see 05-LEARNINGS.md).
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, test, cold-install-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # REQUIRED for npm OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # trusted publishing floor: npm CLI >=11.5.1 / Node >=22.14.0
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish # keyless OIDC (no stored token) + automatic provenance
