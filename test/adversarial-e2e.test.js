@@ -17,13 +17,40 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { map } from "../dist/index.mjs";
+import { toJSON } from "../dist/internal/serialize.mjs";
 import { patterns as adversarialPatterns } from "./fixtures/adversarial-glob/corpus.js";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const fixturesDir = path.join(here, "fixtures");
 
 // A generous wall-clock cap: the segment matcher's cost is polynomial, so even
 // the pathological corpus resolves in single-digit ms — 5000ms proves "bounded,
 // never a hang" with enormous headroom for a loaded CI runner (T-05-04/05).
 const BOUND_MS = 5000;
+
+// DETR-02 helper: assert map(root) is byte-identical across two invocations and
+// that no absolute path leaks into the DERIVED structure. The top-level `root`
+// field is the one documented echo of the input root (serialize.ts: unit paths
+// are "root-relative only") — it is deterministic given the same input, so it is
+// excluded before the leak check; every unit path / edge / diagnostic must be
+// root-relative, never carrying `absNeedle`.
+async function assertDeterministicAndRootRelative(label, root, absNeedle) {
+  const first = toJSON(await map(root));
+  const second = toJSON(await map(root));
+  assert.equal(
+    first,
+    second,
+    `${label}: toJSON(map(root)) must be byte-identical across two invocations (DETR-02)`,
+  );
+  const { root: _echoedRoot, ...derived } = JSON.parse(first);
+  assert.equal(
+    JSON.stringify(derived).includes(absNeedle),
+    false,
+    `${label}: no absolute path may leak into unit paths / edges / diagnostics (only the documented top-level root echo is absolute)`,
+  );
+}
 
 // ── T-05-04: ReDoS globs via a workspace manifest, driven through map() ─────
 // The corpus patterns (deeply-nested **, a 500-segment literal, an evil
@@ -123,6 +150,82 @@ test("map() over a symlink cycle resolves bounded and never enumerates the linke
       false,
       "cycle-linked dirs must never be enumerated as units",
     );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── T-05-06: a canonical config declaring an ESCAPING unit path ─────────────
+// SEC-02 is unconditional: even when the escaping `../../etc` path is authored
+// canonical intent (not a hostile injected caller unit), resolveWithinRoot drops
+// the unit and emits UNIT_PATH_ESCAPE. Canonical authority does not override the
+// path guard — proven here through the full map() assembly, not resolveWithinRoot
+// in isolation.
+test("map() drops a canonical unit whose declared path escapes root with UNIT_PATH_ESCAPE (T-05-06)", async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), "platform-map-adv-escape-"),
+  );
+  try {
+    // A well-formed canonical config (valid name/mode so parsing SUCCEEDS — the
+    // ESCAPE, not a parse error, is what must trigger the drop) declaring a unit
+    // whose path walks out of the root.
+    fs.writeFileSync(
+      path.join(root, "platform-map.json"),
+      JSON.stringify({
+        name: "hostile-host",
+        mode: "multi-repo",
+        units: [{ name: "evil", path: "../../etc" }],
+      }),
+    );
+
+    const pm = await map(root);
+
+    assert.equal(
+      pm.units.some((u) => u.name === "evil"),
+      false,
+      "an escaping canonical unit path must be dropped, even as authored intent",
+    );
+    assert.ok(
+      pm.diagnostics.some((d) => d.code === "UNIT_PATH_ESCAPE"),
+      "expected a UNIT_PATH_ESCAPE diagnostic (SEC-02 is unconditional)",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── T-05-07: DETR-02 determinism sweep across all Phase-5 fixtures ──────────
+// The serializer is the sole sort site, so byte-identical toJSON across two runs
+// is the determinism proof (DESIGN §5). Committed fixtures cover the three
+// Phase-5 topologies; a rebuilt temp monorepo covers the adversarial-tree shape.
+// Each fixture also asserts no absolute path leaks into the derived structure.
+test("map() output is byte-identical across runs with no absolute-path leak, for every committed Phase-5 fixture (DETR-02)", async () => {
+  for (const name of [
+    "synthetic-spec-engine",
+    "monorepo-turbo",
+    "multi-repo-of-monorepos",
+  ]) {
+    const root = path.join(fixturesDir, name);
+    await assertDeterministicAndRootRelative(name, root, root);
+  }
+});
+
+test("map() over a rebuilt temp monorepo is byte-identical across runs with no tmpdir-path leak (DETR-02)", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-adv-detr-"));
+  try {
+    fs.writeFileSync(
+      path.join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    for (const name of ["alpha", "beta"]) {
+      const dir = path.join(root, "packages", name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "package.json"),
+        JSON.stringify({ name }),
+      );
+    }
+    await assertDeterministicAndRootRelative("temp-monorepo", root, root);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
