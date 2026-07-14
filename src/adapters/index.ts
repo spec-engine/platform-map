@@ -26,6 +26,7 @@ import type {
 import { canonicalAdapter } from "./canonical.js";
 import { darkFactoryAdapter } from "./dark-factory.js";
 import { siblingsAdapter } from "./siblings.js";
+import { specEngineAdapter } from "./spec-engine.js";
 import { workspaceAdapter } from "./workspace.js";
 
 /** Everything an adapter needs, computed once by map() and shared read-only.
@@ -110,6 +111,7 @@ export const PRECEDENCE: Array<AdapterName | "caller"> = [
 const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
   canonical: canonicalAdapter,
   "dark-factory": darkFactoryAdapter,
+  "spec-engine": specEngineAdapter,
   workspace: workspaceAdapter,
   siblings: siblingsAdapter,
 };

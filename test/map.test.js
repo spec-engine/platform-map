@@ -414,6 +414,73 @@ test("map() warns and ignores a canonical override naming a non-existent unit", 
   }
 });
 
+// ── CFG-05: spec-engine platform e2e — members glob expands into sub-units ──
+
+function writeMember(dir, config) {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "spec-engine.member.json"),
+    typeof config === "string" ? config : JSON.stringify(config),
+  );
+}
+
+test("map() infers spec-engine sub-member units from a members glob with no platform-map.json", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-se-"));
+  try {
+    writeMember(root, { specs: "spec-engine@3", members: "packages/*" });
+    fs.mkdirSync(path.join(root, "packages", "engine"), { recursive: true });
+    fs.mkdirSync(path.join(root, "packages", "cli"), { recursive: true });
+
+    const pm = await map(root);
+
+    const subMembers = pm.units.filter((u) =>
+      ["packages/cli", "packages/engine"].includes(u.path),
+    );
+    assert.deepEqual(
+      subMembers.map((u) => u.path).sort(),
+      ["packages/cli", "packages/engine"],
+      "both sub-member directories become units",
+    );
+    for (const unit of subMembers) {
+      assert.equal(unit.signals.hasSpecEngineConfig, true);
+      assert.ok(unit.sources.includes("spec-engine"));
+      assert.equal(unit.role, "unknown");
+    }
+    // `specs`/pin never leaks into any unit or signal.
+    assert.equal(/spec-engine@3/.test(JSON.stringify(pm.units)), false);
+    assert.deepEqual(pm.edges, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// SEC-03: a spec-engine sub-member whose package.json name is invalid keeps the
+// unit (identity is its path) and drops only the packageName signal, via map()'s
+// map-owned census — proving SEC-03 re-applies to SE members end-to-end.
+test("map() keeps a spec-engine sub-member with an invalid package name and drops packageName (SEC-03)", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-se-"));
+  try {
+    writeMember(root, { specs: "spec-engine@3", members: "packages/*" });
+    const bad = path.join(root, "packages", "bad");
+    fs.mkdirSync(bad, { recursive: true });
+    fs.writeFileSync(
+      path.join(bad, "package.json"),
+      JSON.stringify({ name: "Invalid Name!!" }),
+    );
+
+    const pm = await map(root);
+    const unit = pm.units.find((u) => u.path === "packages/bad");
+    assert.ok(unit, "the sub-member is still present");
+    assert.equal(Object.hasOwn(unit.signals, "packageName"), false);
+    assert.ok(
+      pm.diagnostics.some((d) => d.code === "MALFORMED_CONFIG"),
+      "expected a MALFORMED_CONFIG diagnostic for the invalid package name",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // ── CFG-04: dark-factory platform e2e — platform.repos[] become units ──────
 
 function writeDfConfig(dir, config) {
