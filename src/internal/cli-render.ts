@@ -12,7 +12,13 @@
 // (`src/internal/*.ts`) — no tsdown.config.ts change is needed for THIS module.
 
 import { graph } from "../graph.js";
-import type { Edge, PlatformMap, Unit } from "../types.js";
+import type {
+  Detection,
+  Edge,
+  PlatformMap,
+  PlatformMapConfig,
+  Unit,
+} from "../types.js";
 import { serialize } from "./serialize.js";
 
 /** The four dispatchable commands. `map` is the default (no subcommand token). */
@@ -183,6 +189,40 @@ export function graphProjection(pm: PlatformMap): GraphProjection {
     leaves: g.leaves(),
     cycles: g.cycles(),
   };
+}
+
+/**
+ * The honest, minimal `platform-map.json` proposal for `init` (CLI-04, Open Q2).
+ * PURE — zero I/O; the actual write lives in bin/platform-map.ts (SEC-05). Always
+ * carries `name`. For `multi-repo`, adds `units[]` distilled from the detected
+ * siblings — carrying ONLY name/path/ref (never the internal hasDfPointer/conflict
+ * facts), omitting `ref` when null. For single-repo/monorepo the object is `{ name }`
+ * alone: the workspace adapter re-discovers members, and v1 init writes from
+ * detection only (no adopt-existing). The result is a valid PlatformMapConfig (every
+ * field optional, D8) and fully JSON-serializable — proven to round-trip via map().
+ */
+export function buildProposal(
+  detection: Detection,
+  name: string,
+): PlatformMapConfig {
+  if (detection.mode === "multi-repo") {
+    const units = (detection.siblings ?? []).map((s) => ({
+      name: s.name,
+      path: s.path,
+      ...(s.ref != null ? { ref: s.ref } : {}),
+    }));
+    return { name, units };
+  }
+  return { name };
+}
+
+/**
+ * Parses an interactive y/N answer (CLI-04). Only `y`/`yes` (any case, surrounding
+ * whitespace tolerated) affirms; empty input and anything else declines — the
+ * conservative default for a write-gating prompt.
+ */
+export function parseYesNo(s: string): boolean {
+  return /^y(es)?$/i.test(s.trim());
 }
 
 /** Short usage/synopsis line (to stderr on a usage error). */
