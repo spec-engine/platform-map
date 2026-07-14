@@ -40,7 +40,7 @@ export default defineConfig([
     // and src/signals.ts (and later src/config.ts) emit to dist/*.mjs so
     // test/*.test.js can import the built artifact directly, without appearing
     // in the public `exports` map (02-RESEARCH.md build-config task).
-    entry: ["src/merge.ts", "src/signals.ts", "src/config.ts"],
+    entry: ["src/merge.ts", "src/signals.ts", "src/config.ts", "src/edges.ts"],
     format: ["esm"],
     dts: false,
     outDir: "dist",

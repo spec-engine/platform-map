@@ -15,8 +15,15 @@
 // enriched with censusSignals(), and any resolved unit — a workspace-package OR
 // a promoted kind:"repo" constituent (WR-03) — that detect() reports as its own
 // monorepo has its units[] expanded via the workspace adapter ONLY (never the
-// root-level canonical/DF/SE/siblings adapters). Still deliberately NOT here:
-// edges (Phase 3, edges is []) and role (Phase 3, seeded "unknown").
+// root-level canonical/DF/SE/siblings adapters).
+//
+// Plan 03-01 (GRAPH-01) makes pm.edges real: the per-unit census also yields
+// workspaceDepNames, stashed per-unit in a map()-local depSideTable, and after
+// the census loop buildEdges() translates those dep NAMES into workspace-package
+// edges (from/to are Unit.name PATHs). Still deliberately NOT here: degree
+// signals (workspaceInDegree/OutDegree), CYCLE_SUSPECTED diagnostics, and role
+// derivation — those are the later Phase-3 slices (03-02/03-03); role stays
+// seeded "unknown".
 
 import * as path from "node:path";
 import type {
@@ -30,6 +37,7 @@ import { PRECEDENCE, selectAdapters } from "./adapters/index.js";
 import { workspaceAdapter } from "./adapters/workspace.js";
 import { readCanonicalConfig } from "./config.js";
 import { detect } from "./detect.js";
+import { buildEdges } from "./edges.js";
 import { MalformedConfigError, RootNotFoundError } from "./errors.js";
 import { resolveWithinRoot } from "./internal/path-guard.js";
 import { probeRef } from "./internal/ref-probe.js";
@@ -128,6 +136,7 @@ function enrichUnit(
   unit: Unit,
   depth: number,
   diagnostics: Diagnostic[],
+  depSideTable: Map<string, string[]>,
 ): void {
   const absDir = path.join(root, unit.path);
 
@@ -137,6 +146,11 @@ function enrichUnit(
   const census = censusSignals(absDir, unit.path);
   applyCensusSignals(unit, census.signals);
   for (const d of census.diagnostics) diagnostics.push(d);
+
+  // GRAPH-01: stash this unit's raw workspace dep-NAME candidates keyed by
+  // Unit.name (all depths, so nested-monorepo children are covered) for
+  // buildEdges below. Deps never enter the public model — they live only here.
+  depSideTable.set(unit.name, census.workspaceDepNames);
 
   if (depth >= MAX_MONOREPO_RECURSION_DEPTH) return;
 
@@ -177,7 +191,7 @@ function enrichUnit(
   for (const d of childMerged.diagnostics) diagnostics.push(d);
 
   for (const child of childMerged.units) {
-    enrichUnit(absDir, child, depth + 1, diagnostics);
+    enrichUnit(absDir, child, depth + 1, diagnostics, depSideTable);
   }
   unit.units = childMerged.units;
 }
@@ -302,9 +316,12 @@ export async function map(
   // any other unexpected throw from censusSignals/workspaceAdapter/merge (or the
   // nested recursion) degrades to a diagnostic instead of leaking out. Guarded
   // per-unit so one unit's failure never aborts the rest.
+  // GRAPH-01: per-unit workspace dep-NAME candidates, keyed by Unit.name, filled
+  // by enrichUnit at every depth; consumed by buildEdges after the loop.
+  const depSideTable = new Map<string, string[]>();
   for (const unit of merged.units) {
     try {
-      enrichUnit(root, unit, 0, extraDiagnostics);
+      enrichUnit(root, unit, 0, extraDiagnostics, depSideTable);
     } catch (error) {
       if (
         error instanceof RootNotFoundError ||
@@ -347,6 +364,12 @@ export async function map(
     }
   }
 
+  // GRAPH-01: translate each unit's raw dep NAMES into workspace-package edges
+  // via the per-sibling-set packageName->Unit.name index. buildEdges returns
+  // natural order; serialize() below is the sole sort site (sorts by (from,to)).
+  // Degree signals + role derivation are deferred to 03-02/03-03.
+  const edges = buildEdges(merged.units, (u) => depSideTable.get(u.name) ?? []);
+
   const pm: PlatformMap = {
     // config.name is authoritative when present (CFG-01); else basename(root),
     // which never leaks an absolute path — fall back to a fixed placeholder
@@ -355,7 +378,7 @@ export async function map(
     root,
     mode: detection.mode,
     units: merged.units,
-    edges: [],
+    edges,
     diagnostics: [...merged.diagnostics, ...extraDiagnostics],
     schemaVersion: 1,
   };
