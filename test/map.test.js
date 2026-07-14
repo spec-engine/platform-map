@@ -414,6 +414,78 @@ test("map() warns and ignores a canonical override naming a non-existent unit", 
   }
 });
 
+// ── CFG-04: dark-factory platform e2e — platform.repos[] become units ──────
+
+function writeDfConfig(dir, config) {
+  const factoryDir = path.join(dir, ".factory");
+  fs.mkdirSync(factoryDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(factoryDir, "df-config.json"),
+    typeof config === "string" ? config : JSON.stringify(config),
+  );
+}
+
+test("map() infers platform.repos[] units from a dark-factory platform with no platform-map.json", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-df-"));
+  try {
+    fs.mkdirSync(path.join(root, "svc-api"), { recursive: true });
+    fs.mkdirSync(path.join(root, "ui"), { recursive: true });
+    writeDfConfig(root, {
+      platform: {
+        factoryDir: ".factory",
+        repos: [
+          { name: "svc-api", path: "svc-api", kind: "repo", dependsOn: ["ui"] },
+          { name: "ui", path: "ui", kind: "repo", dependsOn: [] },
+        ],
+      },
+    });
+
+    const pm = await map(root);
+    const names = pm.units.map((u) => u.name).sort();
+    assert.deepEqual(names, ["svc-api", "ui"]);
+    for (const unit of pm.units) {
+      assert.equal(unit.kind, "repo");
+      assert.ok(unit.sources.includes("dark-factory"));
+      assert.equal(unit.role, "unknown");
+    }
+    // dependsOn[] never becomes an edge (Phase 3).
+    assert.deepEqual(pm.edges, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Precedence: canonical outranks dark-factory. A path disagreement on the same
+// unit name surfaces a CONFIG_CONFLICT and canonical's value wins.
+test("map() resolves a canonical-vs-dark-factory path disagreement in canonical's favor (CONFIG_CONFLICT)", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-df-"));
+  try {
+    fs.mkdirSync(path.join(root, "svc-canonical"), { recursive: true });
+    fs.mkdirSync(path.join(root, "svc-df"), { recursive: true });
+    writeCanonical(root, {
+      units: [{ name: "svc", path: "svc-canonical" }],
+    });
+    writeDfConfig(root, {
+      platform: {
+        repos: [{ name: "svc", path: "svc-df", kind: "repo", dependsOn: [] }],
+      },
+    });
+
+    const pm = await map(root);
+    const svc = pm.units.find((u) => u.name === "svc");
+    assert.ok(svc, "unit 'svc' present");
+    assert.equal(svc.path, "svc-canonical", "canonical path wins the conflict");
+    assert.ok(svc.sources.includes("canonical"));
+    assert.ok(svc.sources.includes("dark-factory"));
+    const conflict = pm.diagnostics.find((d) => d.code === "CONFIG_CONFLICT");
+    assert.ok(conflict, "expected a CONFIG_CONFLICT diagnostic");
+    assert.match(conflict.message, /canonical/);
+    assert.match(conflict.message, /dark-factory/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // MODEL-06 declared-ref-wins: a canonical unit declaring a ref keeps it unprobed;
 // a canonical unit without a ref is resolved by map()'s per-unit probe loop —
 // proving MODEL-06 applies to ALL kind:"repo" units, not only siblings.

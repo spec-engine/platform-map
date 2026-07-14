@@ -24,6 +24,7 @@ import type {
   UnitSignals,
 } from "../types.js";
 import { canonicalAdapter } from "./canonical.js";
+import { darkFactoryAdapter } from "./dark-factory.js";
 import { siblingsAdapter } from "./siblings.js";
 import { workspaceAdapter } from "./workspace.js";
 
@@ -100,12 +101,15 @@ export const PRECEDENCE: Array<AdapterName | "caller"> = [
   "siblings",
 ];
 
-/** Registered adapter functions. The workspace adapter (CFG-06) is wired here
- *  in plan 02-02 and the siblings adapter (CFG-07) in plan 02-03;
- *  canonical/dark-factory/spec-engine arrive in later Phase-2 plans with no
- *  change to this contract. */
+/** Registered adapter functions, listed in PRECEDENCE order for readability
+ *  (selectAdapters walks PRECEDENCE, not this object's key order, so provenance
+ *  ordering is authoritative regardless — but keeping them aligned makes the
+ *  precedence chain obvious). canonical (CFG-01) is wired in plan 02-04,
+ *  dark-factory (CFG-04) + spec-engine (CFG-05) in plan 02-05, workspace
+ *  (CFG-06) in 02-02, siblings (CFG-07) in 02-03. */
 const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
   canonical: canonicalAdapter,
+  "dark-factory": darkFactoryAdapter,
   workspace: workspaceAdapter,
   siblings: siblingsAdapter,
 };
