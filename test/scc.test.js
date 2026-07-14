@@ -87,7 +87,10 @@ test("deterministic under shuffled node + edge insertion order", () => {
     ["d", "e"],
     ["a", "b"],
   ];
-  const reversed = canonicalCycles(["e", "d", "c", "b", "a"], adj(shuffledEdges));
+  const reversed = canonicalCycles(
+    ["e", "d", "c", "b", "a"],
+    adj(shuffledEdges),
+  );
   assert.equal(JSON.stringify(forward), JSON.stringify(reversed));
   assert.deepEqual(forward, [
     ["a", "b", "c"],
