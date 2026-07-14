@@ -112,6 +112,40 @@ test("--json piped stdout is complete valid JSON (no process.exit truncation)", 
   );
 });
 
+// ── WR-01: last-resort net for truly unexpected errors ──────────────────────
+// The library only throws RootNotFoundError/MalformedConfigError (both mapped to
+// a clean exit 1 inside main()); every other error re-throws and, without a
+// rejection handler, would become a runtime-dependent unhandled rejection (Node
+// vs Bun, both required per D5). Deterministic trigger: `init --yes` targeting a
+// FILE path — the single writeFileSync then throws ENOTDIR (an unmapped error).
+// The top-level .catch must map it to exit 1 with ONE clean "internal error:"
+// line on stderr and NO raw stack-trace frames.
+
+test("unexpected error (ENOTDIR via init on a file) → exit 1, clean one-line stderr, no stack", () => {
+  const tmpFile = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-wr01-")),
+    "not-a-dir",
+  );
+  fs.writeFileSync(tmpFile, "i am a file, not a directory\n");
+  try {
+    const r = run(["init", "--yes", tmpFile]);
+    assert.equal(r.status, 1, `expected exit 1, stderr: ${r.stderr}`);
+    assert.match(
+      r.stderr,
+      /platform-map: internal error:/,
+      "last-resort net writes the clean internal-error prefix",
+    );
+    // One clean line — no raw Node stack-trace frames leaked to the user.
+    assert.doesNotMatch(
+      r.stderr,
+      /\n\s+at\s/,
+      "no raw stack-trace frames on stderr",
+    );
+  } finally {
+    fs.rmSync(path.dirname(tmpFile), { recursive: true, force: true });
+  }
+});
+
 // ── CLI-05: exit codes 0/1 (0 covered above; 2 is white-box in cli-render) ──
 
 test("nonexistent root → exit 1, 'root not found' on stderr, empty stdout", () => {

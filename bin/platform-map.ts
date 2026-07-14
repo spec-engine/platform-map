@@ -155,6 +155,22 @@ async function main(): Promise<number> {
 // truncating the JSON payload with a success code. Setting exitCode lets the event
 // loop drain stdout/stderr fully, then exits with the same code exitFor/runInit
 // computed. Never call process.exit anywhere in this file.
-main().then((code) => {
-  process.exitCode = code;
-});
+// WR-01: main() deliberately re-throws anything that is not RootNotFoundError/
+// MalformedConfigError ("surface it, never mask as 0"). Without a rejection
+// handler that re-throw becomes an unhandled promise rejection whose exit code
+// and output are runtime-dependent (Node vs Bun, both required per D5). This is
+// the last-resort net for truly unexpected errors: one clean line to stderr
+// (stdout stays clean for --json consumers) and a defined exit code 1 — set via
+// exitCode (CR-01), never process.exit.
+main().then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (err) => {
+    // One clean line to stderr (message only, never a raw stack trace), stdout
+    // stays clean for --json consumers, exit 1.
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`platform-map: internal error: ${message}\n`);
+    process.exitCode = 1;
+  },
+);
