@@ -51,6 +51,27 @@ test("censusSignals drops an invalid package name but keeps every other signal (
   assert.match(malformed[0].message, /invalid package name dropped: Has Space/);
 });
 
+// WR-01: the invalid-package-name diagnostic must carry the unit's
+// platform-relative locus so the failure reports WHICH unit produced it and
+// serialize.ts's (severity,code,path) tie-break stays total across multiple
+// invalid-name diagnostics.
+test("censusSignals stamps the provided locus onto an invalid-name diagnostic (WR-01)", () => {
+  const { diagnostics } = censusSignals(
+    path.join(signalsDir, "bad-name"),
+    "packages/bad-name",
+  );
+  const malformed = diagnostics.find((d) => d.code === "MALFORMED_CONFIG");
+  assert.ok(malformed, "expected a MALFORMED_CONFIG diagnostic");
+  assert.equal(malformed.path, "packages/bad-name");
+});
+
+test("censusSignals leaves the invalid-name diagnostic path unset when no locus is given", () => {
+  const { diagnostics } = censusSignals(path.join(signalsDir, "bad-name"));
+  const malformed = diagnostics.find((d) => d.code === "MALFORMED_CONFIG");
+  assert.ok(malformed, "expected a MALFORMED_CONFIG diagnostic");
+  assert.equal(Object.hasOwn(malformed, "path") && malformed.path, undefined);
+});
+
 test("censusSignals maps each lockfile to its package manager", () => {
   assert.equal(
     censusSignals(path.join(signalsDir, "rich-pkg")).signals.packageManager,

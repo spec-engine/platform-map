@@ -136,6 +136,21 @@ test("map() keeps a unit with an invalid package name and emits MALFORMED_CONFIG
   );
 });
 
+// WR-01: the invalid-package-name diagnostic carries the unit's
+// platform-relative locus (not just the raw name in the message).
+test("map() stamps the unit path onto an invalid-package-name diagnostic (WR-01)", async () => {
+  const pm = await map(monorepoPnpm);
+  const malformed = pm.diagnostics.find(
+    (d) => d.code === "MALFORMED_CONFIG" && /Has Space/.test(d.message ?? ""),
+  );
+  assert.ok(malformed, "expected the invalid-name MALFORMED_CONFIG diagnostic");
+  assert.equal(
+    malformed.path,
+    "packages/bad-name",
+    "diagnostic carries the unit's platform-relative locus",
+  );
+});
+
 test("map() recurses into a nested monorepo (DET-02) with workspace-only children", async () => {
   const pm = await map(monorepoPnpm);
   const nested = pm.units.find((u) => u.name === "packages/nested-mono");

@@ -140,8 +140,16 @@ function censusLanguages(dir: string): {
  * fact is OMITTED (MODEL-02) — the result is a partial UnitSignals. An invalid
  * package name drops only the packageName field and emits a MALFORMED_CONFIG
  * diagnostic while every other signal is still returned (SEC-03). Never throws.
+ *
+ * `locus` (WR-01) is the unit's platform-relative path; it is stamped onto any
+ * MALFORMED_CONFIG diagnostic this census emits so the failure reports which
+ * unit produced it and the diagnostic sort key stays total. map() always passes
+ * it; standalone callers may omit it.
  */
-export function censusSignals(absUnitDir: string): {
+export function censusSignals(
+  absUnitDir: string,
+  locus?: string,
+): {
   signals: UnitSignals;
   diagnostics: Diagnostic[];
 } {
@@ -166,7 +174,7 @@ export function censusSignals(absUnitDir: string): {
     }
     const name = pkg.name;
     if (typeof name === "string") {
-      const result = validatePackageName(name);
+      const result = validatePackageName(name, locus);
       if (result.ok) signals.packageName = result.name;
       else diagnostics.push(result.diagnostic);
     }

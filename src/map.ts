@@ -112,7 +112,10 @@ function enrichUnit(
 ): void {
   const absDir = path.join(root, unit.path);
 
-  const census = censusSignals(absDir);
+  // WR-01: pass the unit's platform-relative path as the census locus so an
+  // invalid-package-name MALFORMED_CONFIG diagnostic reports which unit it came
+  // from and stays deterministically ordered.
+  const census = censusSignals(absDir, unit.path);
   applyCensusSignals(unit, census.signals);
   for (const d of census.diagnostics) diagnostics.push(d);
 

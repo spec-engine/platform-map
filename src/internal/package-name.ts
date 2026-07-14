@@ -26,8 +26,18 @@ const PACKAGE_NAME_PATTERN = /^@?[a-z0-9][a-z0-9._/-]*$/i;
  * returns the name unchanged; on failure returns a MALFORMED_CONFIG (severity
  * `warning`) diagnostic. Pure, never throws — an invalid name degrades to a
  * dropped signal + diagnostic, never an exception.
+ *
+ * `locus` is the unit's platform-relative path (WR-01): it is stamped onto the
+ * diagnostic's `path` so the failure reports WHICH unit produced it AND so
+ * serialize.ts's `compareDiagnostics` (which tie-breaks on severity,code,path)
+ * stays total for multiple invalid-name diagnostics — without a locus two such
+ * diagnostics collide on the sort key and their order becomes iteration-order
+ * dependent.
  */
-export function validatePackageName(name: string): ValidatePackageNameResult {
+export function validatePackageName(
+  name: string,
+  locus?: string,
+): ValidatePackageNameResult {
   if (typeof name === "string" && PACKAGE_NAME_PATTERN.test(name)) {
     return { ok: true, name };
   }
@@ -36,6 +46,7 @@ export function validatePackageName(name: string): ValidatePackageNameResult {
     diagnostic: {
       code: "MALFORMED_CONFIG",
       severity: "warning",
+      path: locus,
       message: `MALFORMED_CONFIG: invalid package name dropped: ${name}`,
     },
   };
