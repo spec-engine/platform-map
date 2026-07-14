@@ -22,6 +22,7 @@ import type {
   Mode,
   UnitSignals,
 } from "../types.js";
+import { workspaceAdapter } from "./workspace.js";
 
 /** Everything an adapter needs, computed once by map() and shared read-only.
  *  Adapters never re-run detect() (A5) and never recurse (only map() does). */
@@ -77,9 +78,12 @@ export const PRECEDENCE: Array<AdapterName | "caller"> = [
   "siblings",
 ];
 
-/** Registered adapter functions. Empty until later Phase-2 plans register
- *  real adapters (canonical/dark-factory/spec-engine/workspace/siblings). */
-const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {};
+/** Registered adapter functions. The workspace adapter (CFG-06) is wired here
+ *  in plan 02-02; canonical/dark-factory/spec-engine/siblings arrive in later
+ *  Phase-2 plans with no change to this contract. */
+const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
+  workspace: workspaceAdapter,
+};
 
 /**
  * Returns the enabled adapters in precedence order. Walks PRECEDENCE, skips

@@ -1,0 +1,11 @@
+{
+  "name": "@scope/pkg-a",
+  "private": true,
+  "exports": {
+    ".": "./index.js"
+  },
+  "bin": "./cli.js",
+  "scripts": {
+    "start": "node ."
+  }
+}
