@@ -10,6 +10,7 @@ export { RootNotFoundError } from "./errors.js";
 // just types), and are the single sort/stringify seam every consumer can rely
 // on for byte-identical output.
 export { serialize, toJSON } from "./internal/serialize.js";
+export { map } from "./map.js";
 export type {
   AdapterName,
   Detection,

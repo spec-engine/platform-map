@@ -12,8 +12,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { merge } from "../dist/merge.mjs";
 import { toJSON } from "../dist/internal/serialize.mjs";
+import { merge } from "../dist/merge.mjs";
 
 function res(source, partialUnits, diagnostics = []) {
   return { source, result: { partialUnits, edges: [], diagnostics } };
@@ -37,10 +37,20 @@ test("two sources disagreeing on path -> one CONFIG_CONFLICT naming both sources
   const { units, diagnostics } = merge(
     [
       res("canonical", [
-        { name: "svc-api", path: "../acme-api", kind: "repo", source: "canonical" },
+        {
+          name: "svc-api",
+          path: "../acme-api",
+          kind: "repo",
+          source: "canonical",
+        },
       ]),
       res("spec-engine", [
-        { name: "svc-api", path: "members/api", kind: "repo", source: "spec-engine" },
+        {
+          name: "svc-api",
+          path: "members/api",
+          kind: "repo",
+          source: "spec-engine",
+        },
       ]),
     ],
     false,
@@ -53,9 +63,18 @@ test("two sources disagreeing on path -> one CONFIG_CONFLICT naming both sources
   assert.equal(conflicts.length, 1);
   const msg = conflicts[0].message;
   assert.ok(msg.includes("canonical"), `message names existing source: ${msg}`);
-  assert.ok(msg.includes("spec-engine"), `message names incoming source: ${msg}`);
-  assert.ok(msg.includes("../acme-api"), `message names existing value: ${msg}`);
-  assert.ok(msg.includes("members/api"), `message names incoming value: ${msg}`);
+  assert.ok(
+    msg.includes("spec-engine"),
+    `message names incoming source: ${msg}`,
+  );
+  assert.ok(
+    msg.includes("../acme-api"),
+    `message names existing value: ${msg}`,
+  );
+  assert.ok(
+    msg.includes("members/api"),
+    `message names incoming value: ${msg}`,
+  );
 
   assert.deepEqual(units[0].sources, ["canonical", "spec-engine"]);
 });
@@ -69,7 +88,13 @@ test("a lower-precedence source filling an unset field writes it with no conflic
         { name: "svc", path: "svc", kind: "repo", source: "canonical" },
       ]),
       res("dark-factory", [
-        { name: "svc", path: "svc", kind: "repo", ref: "main", source: "dark-factory" },
+        {
+          name: "svc",
+          path: "svc",
+          kind: "repo",
+          ref: "main",
+          source: "dark-factory",
+        },
       ]),
     ],
     false,
@@ -89,14 +114,24 @@ test("a lower-precedence source filling an unset field writes it with no conflic
 test("sources[] accumulates every contributing source in input order", () => {
   const { units } = merge(
     [
-      res("canonical", [{ name: "u", path: "u", kind: "repo", source: "canonical" }]),
-      res("dark-factory", [{ name: "u", path: "u", kind: "repo", source: "dark-factory" }]),
-      res("workspace", [{ name: "u", path: "u", kind: "repo", source: "workspace" }]),
+      res("canonical", [
+        { name: "u", path: "u", kind: "repo", source: "canonical" },
+      ]),
+      res("dark-factory", [
+        { name: "u", path: "u", kind: "repo", source: "dark-factory" },
+      ]),
+      res("workspace", [
+        { name: "u", path: "u", kind: "repo", source: "workspace" },
+      ]),
     ],
     false,
   );
   assert.equal(units.length, 1);
-  assert.deepEqual(units[0].sources, ["canonical", "dark-factory", "workspace"]);
+  assert.deepEqual(units[0].sources, [
+    "canonical",
+    "dark-factory",
+    "workspace",
+  ]);
 });
 
 // ── promotion gate: provisional + canonicalDeclaredUnits === true ──────────
@@ -151,9 +186,17 @@ test("a provisional candidate with no declared canonical units[] is promoted to 
 test("a provisional candidate whose name a higher source already claimed confirms it (merges, no diagnostic)", () => {
   const { units, diagnostics } = merge(
     [
-      res("canonical", [{ name: "svc", path: "svc", kind: "repo", source: "canonical" }]),
+      res("canonical", [
+        { name: "svc", path: "svc", kind: "repo", source: "canonical" },
+      ]),
       res("siblings", [
-        { name: "svc", path: "svc", kind: "repo", source: "siblings", provisional: true },
+        {
+          name: "svc",
+          path: "svc",
+          kind: "repo",
+          source: "siblings",
+          provisional: true,
+        },
       ]),
     ],
     true,
@@ -174,7 +217,13 @@ test("merge appends each result's own diagnostics", () => {
       res(
         "spec-engine",
         [],
-        [{ code: "MALFORMED_CONFIG", severity: "warning", message: "bad member config" }],
+        [
+          {
+            code: "MALFORMED_CONFIG",
+            severity: "warning",
+            message: "bad member config",
+          },
+        ],
       ),
     ],
     false,
