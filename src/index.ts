@@ -1,6 +1,7 @@
 // Public entry point for @spec-engine/platform-map.
 // Re-exports the full public type contract, the deterministic serializer,
-// and detect(). `map`/`graph`/`deriveRole` land in later phases.
+// detect(), map(), graph(), and deriveRole() (the standalone, replayable role
+// classifier — MODEL-03).
 
 export { detect } from "./detect.js";
 export { MalformedConfigError, RootNotFoundError } from "./errors.js";
@@ -12,6 +13,7 @@ export { graph } from "./graph.js";
 // on for byte-identical output.
 export { serialize, toJSON } from "./internal/serialize.js";
 export { map } from "./map.js";
+export { deriveRole } from "./role.js";
 export type {
   AdapterName,
   Detection,

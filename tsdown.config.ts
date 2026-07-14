@@ -46,6 +46,7 @@ export default defineConfig([
       "src/config.ts",
       "src/edges.ts",
       "src/graph.ts",
+      "src/role.ts",
     ],
     format: ["esm"],
     dts: false,
