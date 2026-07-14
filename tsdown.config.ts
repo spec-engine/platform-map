@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "tsdown";
+
+// Build-time only: reading package.json via import.meta.url is allowed HERE
+// because tsdown.config.ts is never shipped. D-04 governs the CLI/library
+// RUNTIME — the version is baked into dist/platform-map.mjs as __CLI_VERSION__.
+const pkgVersion = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+).version;
 
 export default defineConfig([
   {
@@ -13,14 +21,16 @@ export default defineConfig([
     sourcemap: false, // determinism: no absolute-path leakage into maps
   },
   {
-    // CLI stub — ESM-only, never require()'d/import'd by another package (D-04:
-    // no import.meta.url/__dirname anywhere in the library or this entry).
-    // Fully implemented in Phase 4; Phase 1 ships a minimal stub.
+    // CLI entry — ESM-only, never require()'d/import'd by another package (D-04:
+    // no import.meta.url/__dirname anywhere in the library or this entry). The
+    // package version is injected at build time as the bare __CLI_VERSION__
+    // identifier so `--version` needs no runtime package.json read (D-04).
     entry: ["bin/platform-map.ts"],
     format: ["esm"],
     platform: "node",
     dts: false,
     clean: false,
+    define: { __CLI_VERSION__: JSON.stringify(pkgVersion) },
   },
   {
     // Internal test-build seam (SKELETON.md scaffold contract): every
