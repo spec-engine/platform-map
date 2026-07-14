@@ -67,9 +67,14 @@ export function graph(pm: PlatformMap): PlatformGraph {
   return {
     toDepGraph: (): Map<string, Set<string>> => {
       // Seed EVERY workspace-package name (empty Set for leaves) — mirrors DF
-      // buildDepGraph's graph.set(p.name, deps) for all packages.
+      // buildDepGraph's graph.set(p.name, deps) for all packages. Inner Sets are
+      // built from lexically-sorted deps so iteration order is input-order
+      // independent (WR-01): deterministic even for a caller-built PlatformMap
+      // whose edges weren't run through serialize.ts. DF's planWaves consumes the
+      // Sets order-independently, but the honesty contract promises sorted views.
       const g = new Map<string, Set<string>>();
-      for (const n of names) g.set(n, new Set(dep.get(n)));
+      for (const n of names)
+        g.set(n, new Set([...(dep.get(n) ?? [])].sort(compare)));
       return g;
     },
     dependenciesOf: (name: string): string[] => closure(name, dep),

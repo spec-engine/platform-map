@@ -105,6 +105,24 @@ test("toDepGraph: EVERY workspace-package is a key, leaves get an empty Set", ()
   assert.equal(g.get("core").size, 0);
 });
 
+// WR-01: inner Set iteration must be lexically sorted regardless of edge input
+// order — deterministic even for a caller-built PlatformMap not run through
+// serialize.ts (whose edges arrive here in reverse-lexical order).
+test("toDepGraph: inner Set iteration is lexically sorted regardless of edge order", () => {
+  const pm = pmOf(
+    [wp("app"), wp("alpha"), wp("beta"), wp("gamma")],
+    [
+      ["app", "gamma"],
+      ["app", "beta"],
+      ["app", "alpha"],
+    ],
+  );
+  assert.deepEqual(
+    [...graph(pm).toDepGraph().get("app")],
+    ["alpha", "beta", "gamma"],
+  );
+});
+
 test("toDepGraph: recurses into nested monorepo, collects only workspace-packages", () => {
   // The monorepo container is kind:"repo" (not a workspace-package); only its
   // nested workspace-packages are graph nodes.
