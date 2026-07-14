@@ -1,0 +1,13 @@
+{
+  "name": "web",
+  "scripts": {
+    "start": "node ."
+  },
+  "dependencies": {
+    "@scope/lib": "workspace:*",
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "@scope/util": "workspace:*"
+  }
+}

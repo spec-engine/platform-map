@@ -1,0 +1,6 @@
+{
+  "name": "@scope/util",
+  "exports": {
+    ".": "./index.js"
+  }
+}
