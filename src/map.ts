@@ -63,6 +63,21 @@ function malformedConfigDiagnostic(
   };
 }
 
+/** WR-04: an unexpected throw from the post-merge signal census / monorepo
+ *  recursion degrades to a MALFORMED_CONFIG diagnostic (never escapes map()),
+ *  mirroring the adapter loop's SEC-01 discipline. RootNotFoundError and
+ *  MalformedConfigError are re-thrown by the caller — only those two ever
+ *  leave map(). The `path` locus is the unit whose enrichment failed. */
+function censusFailureDiagnostic(unitPath: string, error: unknown): Diagnostic {
+  const reason = error instanceof Error ? error.message : String(error);
+  return {
+    code: "MALFORMED_CONFIG",
+    severity: "warning",
+    path: unitPath,
+    message: `MALFORMED_CONFIG: signal census failed for unit "${unitPath}": ${reason}`,
+  };
+}
+
 /** A canonical `overrides` key that matches no assembled unit is a stale/honest
  *  mistake: surface a warning (never a throw) and ignore the override. Reuses
  *  the MALFORMED_CONFIG code (config-shaped honesty), severity "warning". */
@@ -282,8 +297,23 @@ export async function map(
 
   // map() owns the per-unit fs signal census + DET-02 monorepo recursion
   // (CONTEXT signal-ownership split). Census diagnostics join the map's.
+  // WR-04: this loop runs under the SAME SEC-01 discipline as the adapter fold
+  // above — only RootNotFoundError and MalformedConfigError may escape map();
+  // any other unexpected throw from censusSignals/workspaceAdapter/merge (or the
+  // nested recursion) degrades to a diagnostic instead of leaking out. Guarded
+  // per-unit so one unit's failure never aborts the rest.
   for (const unit of merged.units) {
-    enrichUnit(root, unit, 0, extraDiagnostics);
+    try {
+      enrichUnit(root, unit, 0, extraDiagnostics);
+    } catch (error) {
+      if (
+        error instanceof RootNotFoundError ||
+        error instanceof MalformedConfigError
+      ) {
+        throw error;
+      }
+      extraDiagnostics.push(censusFailureDiagnostic(unit.path, error));
+    }
   }
 
   // MODEL-06: map()'s per-unit loop — NOT the siblings adapter — owns the

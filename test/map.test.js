@@ -335,6 +335,37 @@ test("map() on a nonexistent root rejects with RootNotFoundError", async () => {
   );
 });
 
+// WR-04: the post-merge census + monorepo recursion must run under the SAME
+// SEC-01 two-error discipline as the adapter fold — only RootNotFoundError and
+// MalformedConfigError may escape map(); any other throw from the census/
+// recursion path degrades to a diagnostic. censusSignals/workspaceAdapter/merge
+// are all designed not to throw today (no runtime seam forces a throw), so this
+// is a defense-in-depth structural guard: it asserts the enrichment loop is
+// wrapped so a future regression cannot leak an arbitrary error out of map().
+test("map() runs the post-merge census/recursion under the SEC-01 throw guard (WR-04)", () => {
+  const src = fs.readFileSync(path.join(here, "..", "src", "map.ts"), "utf8");
+  // Scope to the region between merge() and the ref-probe Promise.all.
+  const start = src.indexOf("const merged = merge(");
+  const end = src.indexOf("await Promise.all");
+  assert.ok(
+    start !== -1 && end !== -1 && end > start,
+    "post-merge region found",
+  );
+  const region = src.slice(start, end);
+  assert.match(region, /for \(const unit of merged\.units\)/);
+  assert.match(region, /try\s*{/, "enrichment loop is wrapped in try/catch");
+  assert.match(region, /error instanceof RootNotFoundError/);
+  assert.match(region, /error instanceof MalformedConfigError/);
+  assert.match(region, /throw error/, "the two hard errors are re-thrown");
+});
+
+// The behavioral half of WR-04: exercising the now-guarded census + nested
+// monorepo recursion still resolves (never rejects) — the guard does not change
+// the happy path.
+test("map() still resolves cleanly over the guarded census + recursion path (WR-04)", async () => {
+  await assert.doesNotReject(() => map(monorepoPnpm));
+});
+
 // ── CFG-01/CFG-02/SEC-01: canonical platform-map.json authority ────────────
 
 function writeCanonical(dir, config) {
