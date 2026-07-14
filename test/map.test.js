@@ -109,8 +109,19 @@ test("map() enumerates workspace-package units with signals for a monorepo", asy
   for (const unit of pm.units) {
     assert.equal(unit.kind, "workspace-package");
     assert.deepEqual(unit.sources, ["workspace"]);
-    assert.equal(unit.role, "unknown");
   }
+
+  // Phase 3 (03-03): roles are now DERIVED, not seeded "unknown". With no
+  // cross-package deps in this fixture every degree is 0, so only pkg-a — which
+  // carries a start script + Dockerfile — fires deriveRole rule 1 -> "app"; the
+  // rest have no discriminating signal and fall through to rule 5 -> "unknown".
+  const roleByName = Object.fromEntries(pm.units.map((u) => [u.name, u.role]));
+  assert.deepEqual(roleByName, {
+    "apps/app-a": "unknown",
+    "packages/bad-name": "unknown",
+    "packages/nested-mono": "unknown",
+    "packages/pkg-a": "app",
+  });
 
   // pkg-a carries the full package.json + fs signal census.
   const pkgA = pm.units.find((u) => u.name === "packages/pkg-a");

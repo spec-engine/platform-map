@@ -50,7 +50,10 @@ test("rule 1 wins over later library-shaped signals", () => {
 
 test("rule 2: workspaceInDegree > 0 -> library", () => {
   assert.equal(deriveRole({ workspaceInDegree: 1 }), "library");
-  assert.equal(deriveRole({ workspaceInDegree: 5, hasExports: false }), "library");
+  assert.equal(
+    deriveRole({ workspaceInDegree: 5, hasExports: false }),
+    "library",
+  );
 });
 
 test("rule 3: exports-shaped, private, no start script -> library", () => {
@@ -98,7 +101,10 @@ test("absent workspaceInDegree skips rules 2 AND 4 (undefined is not 0)", () => 
 
 test("absent workspaceOutDegree skips rule 4", () => {
   // inDegree 0, no out-degree signal, no exports, no app markers -> unknown.
-  assert.equal(deriveRole({ workspaceInDegree: 0, hasExports: false }), "unknown");
+  assert.equal(
+    deriveRole({ workspaceInDegree: 0, hasExports: false }),
+    "unknown",
+  );
 });
 
 // ── applyRoles: recursion at all depths + overrides win (MODEL-04) ───────────

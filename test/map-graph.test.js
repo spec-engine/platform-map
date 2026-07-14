@@ -104,7 +104,11 @@ test("map(cyclic): one CYCLE_SUSPECTED warning per cycle, mirrors graph().cycles
     const cycleDiags = pm.diagnostics.filter(
       (d) => d.code === "CYCLE_SUSPECTED",
     );
-    assert.equal(cycleDiags.length, 1, "exactly one CYCLE_SUSPECTED diagnostic");
+    assert.equal(
+      cycleDiags.length,
+      1,
+      "exactly one CYCLE_SUSPECTED diagnostic",
+    );
     assert.equal(cycleDiags[0].severity, "warning");
 
     // The diagnostic path is the lexically-smallest cycle member, and it agrees
@@ -151,7 +155,8 @@ test("toJSON is byte-identical under shuffled unit/edge/diagnostic ordering", ()
     code: "CYCLE_SUSPECTED",
     severity: "warning",
     path: "packages/a",
-    message: "CYCLE_SUSPECTED: workspace dependency cycle among packages/a, packages/b",
+    message:
+      "CYCLE_SUSPECTED: workspace dependency cycle among packages/a, packages/b",
   };
   const wrap = (units, edges, diagnostics) =>
     toJSON({

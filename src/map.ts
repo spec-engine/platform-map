@@ -20,10 +20,15 @@
 // Plan 03-01 (GRAPH-01) makes pm.edges real: the per-unit census also yields
 // workspaceDepNames, stashed per-unit in a map()-local depSideTable, and after
 // the census loop buildEdges() translates those dep NAMES into workspace-package
-// edges (from/to are Unit.name PATHs). Still deliberately NOT here: degree
-// signals (workspaceInDegree/OutDegree), CYCLE_SUSPECTED diagnostics, and role
-// derivation — those are the later Phase-3 slices (03-02/03-03); role stays
-// seeded "unknown".
+// edges (from/to are Unit.name PATHs).
+//
+// Plan 03-03 completes Phase 3 at the assembly layer: after buildEdges the map()
+// tail runs the GRAPH-05 STRICT ORDER — populateDegrees (writes
+// workspaceInDegree/OutDegree, 0 included) -> cycle detection (emits one
+// CYCLE_SUSPECTED warning per cycle via the shared scc.ts, never throws, GRAPH-04)
+// -> applyRoles (stamps deriveRole()'s classification at all depths, canonical
+// overrides win, MODEL-03/04). Degrees are written BEFORE roles so deriveRole's
+// degree-sensitive rules never read undefined.
 
 import * as path from "node:path";
 import type {
@@ -37,16 +42,19 @@ import { PRECEDENCE, selectAdapters } from "./adapters/index.js";
 import { workspaceAdapter } from "./adapters/workspace.js";
 import { readCanonicalConfig } from "./config.js";
 import { detect } from "./detect.js";
-import { buildEdges } from "./edges.js";
+import { buildEdges, populateDegrees } from "./edges.js";
 import { MalformedConfigError, RootNotFoundError } from "./errors.js";
 import { resolveWithinRoot } from "./internal/path-guard.js";
 import { probeRef } from "./internal/ref-probe.js";
+import { canonicalCycles } from "./internal/scc.js";
 import { serialize } from "./internal/serialize.js";
 import { merge } from "./merge.js";
+import { applyRoles } from "./role.js";
 import { censusSignals } from "./signals.js";
 import type {
   AdapterName,
   Diagnostic,
+  Edge,
   MapOptions,
   PlatformMap,
   Unit,
@@ -105,6 +113,31 @@ function collectUnitNames(units: Unit[], into: Set<string>): void {
     into.add(u.name);
     if (u.units.length > 0) collectUnitNames(u.units, into);
   }
+}
+
+/** Collects every kind:"workspace-package" unit name at all depths — the node
+ *  set fed to canonicalCycles (edges only ever form between workspace-packages,
+ *  so kind:"repo" containers are never cycle members). */
+function collectWorkspacePackageNames(units: Unit[], into: string[]): void {
+  for (const u of units) {
+    if (u.kind === "workspace-package") into.push(u.name);
+    if (u.units.length > 0) collectWorkspacePackageNames(u.units, into);
+  }
+}
+
+/** GRAPH-04: a suspected workspace dependency cycle surfaces as an additive
+ *  CYCLE_SUSPECTED diagnostic — severity "warning" (NOT "error", which would
+ *  prematurely trip the Phase-4 CLI exit-code-2 path), path = the
+ *  lexically-smallest cycle member (cycle[0], since canonicalCycles sorts each
+ *  member list). map() NEVER throws on a cycle; mapping still succeeds. The same
+ *  scc.ts canonicalCycles backs graph().cycles(), so the two agree byte-for-byte. */
+function cycleSuspectedDiagnostic(cycle: string[]): Diagnostic {
+  return {
+    code: "CYCLE_SUSPECTED",
+    severity: "warning",
+    path: cycle[0],
+    message: `CYCLE_SUSPECTED: workspace dependency cycle among ${cycle.join(", ")}`,
+  };
 }
 
 /** Gap-fills map-owned census facts onto a unit's signals WITHOUT overwriting
@@ -367,8 +400,45 @@ export async function map(
   // GRAPH-01: translate each unit's raw dep NAMES into workspace-package edges
   // via the per-sibling-set packageName->Unit.name index. buildEdges returns
   // natural order; serialize() below is the sole sort site (sorts by (from,to)).
-  // Degree signals + role derivation are deferred to 03-02/03-03.
   const edges = buildEdges(merged.units, (u) => depSideTable.get(u.name) ?? []);
+
+  // GRAPH-05 STRICT ORDER (03-03): degrees -> cycles -> roles, in exactly this
+  // sequence. Degrees MUST be written before applyRoles or deriveRole's rules 2/4
+  // read `undefined` and misclassify libraries as unknown.
+  //
+  // (1) Populate workspaceInDegree/workspaceOutDegree (0 written explicitly) onto
+  //     every workspace-package unit from the flat edge list.
+  populateDegrees(merged.units, edges);
+
+  // (2) GRAPH-04: detect cycles over the workspace-package node set + edge
+  //     adjacency and emit ONE CYCLE_SUSPECTED diagnostic per cycle (additive,
+  //     never throws). Reuses the SAME scc.ts canonicalCycles as graph().cycles(),
+  //     so the diagnostic and the query view agree byte-for-byte.
+  const cycleNodes: string[] = [];
+  collectWorkspacePackageNames(merged.units, cycleNodes);
+  const adjacency = new Map<string, Set<string>>();
+  for (const e of edges as Edge[]) {
+    let outs = adjacency.get(e.from);
+    if (outs === undefined) {
+      outs = new Set<string>();
+      adjacency.set(e.from, outs);
+    }
+    outs.add(e.to);
+  }
+  for (const cycle of canonicalCycles(cycleNodes, adjacency)) {
+    extraDiagnostics.push(cycleSuspectedDiagnostic(cycle));
+  }
+
+  // (3) MODEL-03/04: stamp derived roles onto every unit at all depths; a
+  //     canonical overrides[name].role beats derivation. Runs AFTER degrees so
+  //     the degree-sensitive rules see populated values.
+  //
+  // ROADMAP-OWNER FLAG (deferred to Phase 5): the DESIGN §4 role anchor holds
+  // against a SYNTHETIC spec-engine-shaped fixture but does NOT hold against the
+  // LIVE ../spec-engine repo (there webapp derives to "library" and engine<->webapp
+  // is a real 2-cycle). Live-repo parity is out of scope here and flagged for the
+  // roadmap owner — do NOT test deriveRole against the live repo.
+  applyRoles(merged.units, canonicalSide?.overrides);
 
   const pm: PlatformMap = {
     // config.name is authoritative when present (CFG-01); else basename(root),
