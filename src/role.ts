@@ -31,8 +31,11 @@ export function deriveRole(s: UnitSignals): Role {
   // NOTE: DESIGN §4 rule 3 reads `hasExports && private !== false … && !hasStartScript`;
   // the "…" ellipsis is interpreted as NO additional hidden clause (operator
   // notified and accepts this reading — see 03-03-PLAN.md / SUMMARY).
-  if (s.hasExports === true && s.private !== false && s.hasStartScript !== true)
-    return "library";
+  // Rule 1 already returned "app" for any truthy `hasStartScript`, so the DESIGN
+  // `&& !hasStartScript` clause is always satisfied here — omitted to keep tsc's
+  // control-flow narrowing happy (it types `hasStartScript` as `false | undefined`
+  // at this point, making `!== true` a provably-dead comparison).
+  if (s.hasExports === true && s.private !== false) return "library";
   // Rule 4: pure sink (depends on things, nothing depends on it, no exports) -> app.
   if (
     s.workspaceInDegree === 0 &&

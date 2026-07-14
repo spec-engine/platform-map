@@ -54,6 +54,7 @@ export function canonicalCycles(
 
     while (work.length > 0) {
       const frame = work[work.length - 1];
+      if (frame === undefined) break; // unreachable: while-guard ensures work is non-empty
       const v = frame.v;
 
       // First visit to this frame's node: assign index/lowlink and push on the SCC stack.
@@ -70,6 +71,7 @@ export function canonicalCycles(
       while (frame.i < frame.neighbors.length) {
         const w = frame.neighbors[frame.i];
         frame.i++;
+        if (w === undefined) continue; // unreachable: i < neighbors.length
         if (!index.has(w)) {
           work.push({ v: w, i: 0, neighbors: [] });
           recursed = true;
@@ -99,16 +101,20 @@ export function canonicalCycles(
       // Propagate v's lowlink up to its parent (the return-from-recursion update).
       if (work.length > 0) {
         const parent = work[work.length - 1];
-        const lp = low.get(parent.v);
-        const lvv = low.get(v);
-        if (lp !== undefined && lvv !== undefined && lvv < lp) {
-          low.set(parent.v, lvv);
+        if (parent !== undefined) {
+          const lp = low.get(parent.v);
+          const lvv = low.get(v);
+          if (lp !== undefined && lvv !== undefined && lvv < lp) {
+            low.set(parent.v, lvv);
+          }
         }
       }
     }
   }
 
   for (const c of sccs) c.sort(compare);
-  sccs.sort((a, b) => compare(a[0], b[0]));
+  // Each SCC has length >= 2 (size filter above), so a[0]/b[0] are always defined;
+  // the `?? ""` fallback satisfies noUncheckedIndexedAccess without changing order.
+  sccs.sort((a, b) => compare(a[0] ?? "", b[0] ?? ""));
   return sccs;
 }
