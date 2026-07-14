@@ -148,6 +148,13 @@ async function main(): Promise<number> {
   }
 }
 
+// CR-01: set process.exitCode instead of calling process.exit(code). When stdout
+// is a pipe (the package's core consumption mode — `platform-map --json | jq`, or
+// Dark Factory/Spec Engine spawning it), writes are async+buffered; process.exit()
+// discards the buffered tail once output exceeds the ~64KB pipe buffer, silently
+// truncating the JSON payload with a success code. Setting exitCode lets the event
+// loop drain stdout/stderr fully, then exits with the same code exitFor/runInit
+// computed. Never call process.exit anywhere in this file.
 main().then((code) => {
-  process.exit(code);
+  process.exitCode = code;
 });

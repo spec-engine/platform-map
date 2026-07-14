@@ -15,7 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { map } from "../dist/index.mjs";
+import { map, toJSON } from "../dist/index.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(here, "fixtures");
@@ -73,6 +73,43 @@ test("--json: parses as JSON with schemaVersion 1, stderr empty (SC2 hard)", () 
   });
   assert.equal(parsed.schemaVersion, 1);
   assert.equal(r.stderr, "", "SC2: --json writes nothing to stderr");
+});
+
+// ── CR-01: piped stdout must not truncate — full --json JSON round-trips ─────
+// spawnSync pipes stdout (not a TTY), the exact async+buffered mode where a
+// premature process.exit() would discard the buffered tail past the ~64KB pipe
+// buffer. Assert the captured stdout parses as COMPLETE JSON with the expected
+// top-level keys and exit code 0 — proving the payload drained before exit.
+
+test("--json piped stdout is complete valid JSON (no process.exit truncation)", async () => {
+  const r = run(["--json", MONOREPO_PNPM]);
+  assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+  let parsed;
+  assert.doesNotThrow(() => {
+    parsed = JSON.parse(r.stdout);
+  }, "piped --json stdout must be complete, parseable JSON (not truncated)");
+  for (const key of [
+    "name",
+    "root",
+    "mode",
+    "units",
+    "edges",
+    "diagnostics",
+    "schemaVersion",
+  ]) {
+    assert.ok(
+      Object.hasOwn(parsed, key),
+      `complete PlatformMap JSON carries top-level key ${key}`,
+    );
+  }
+  // The captured bytes are exactly toJSON(pm) + "\n" — determinism preserved
+  // end-to-end and the full payload drained before the process exited.
+  const expected = `${toJSON(await map(MONOREPO_PNPM))}\n`;
+  assert.equal(
+    r.stdout,
+    expected,
+    "piped stdout === toJSON(map(dir)) + newline",
+  );
 });
 
 // ── CLI-05: exit codes 0/1 (0 covered above; 2 is white-box in cli-render) ──
