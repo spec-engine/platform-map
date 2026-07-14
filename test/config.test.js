@@ -11,7 +11,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { readCanonicalConfig } from "../dist/config.mjs";
-import { MalformedConfigError } from "../dist/index.mjs";
+
+// NOTE: readCanonicalConfig ships in the internal `dist/config.mjs` test-build
+// seam, which bundles its OWN copy of the MalformedConfigError class — so a
+// cross-bundle `instanceof` against the public `dist/index.mjs` copy would be a
+// false negative. This white-box unit test therefore asserts on `err.name`
+// (stable across bundles). The PUBLIC same-bundle `instanceof` contract — what
+// consumers actually catch off `map()` — is proven in map.test.js, where both
+// `map` and `MalformedConfigError` come from `dist/index.mjs`.
+function isMalformedConfigError(err) {
+  return err instanceof Error && err.name === "MalformedConfigError";
+}
 
 function mkTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-config-"));
@@ -48,7 +58,7 @@ test("unreadable platform-map.json throws MalformedConfigError (could not be rea
     assert.throws(
       () => readCanonicalConfig(root),
       (err) => {
-        assert.ok(err instanceof MalformedConfigError);
+        assert.ok(isMalformedConfigError(err));
         assert.match(err.message, /could not be read/);
         assert.ok(!err.message.includes(root), "no absolute path in message");
         return true;
@@ -68,7 +78,7 @@ test("invalid JSON throws MalformedConfigError (failed to parse as JSON)", () =>
     assert.throws(
       () => readCanonicalConfig(root),
       (err) => {
-        assert.ok(err instanceof MalformedConfigError);
+        assert.ok(isMalformedConfigError(err));
         assert.match(err.message, /failed to parse as JSON/);
         assert.ok(!err.message.includes(root), "no absolute path in message");
         return true;
@@ -88,7 +98,7 @@ test("units not an array throws MalformedConfigError (failed validation)", () =>
     assert.throws(
       () => readCanonicalConfig(root),
       (err) => {
-        assert.ok(err instanceof MalformedConfigError);
+        assert.ok(isMalformedConfigError(err));
         assert.match(err.message, /failed validation/);
         return true;
       },
@@ -102,7 +112,7 @@ test("a unit missing name/path throws failed validation", () => {
   const root = mkTempDir();
   try {
     writeConfig(root, { units: [{ path: "svc-a" }] });
-    assert.throws(() => readCanonicalConfig(root), MalformedConfigError);
+    assert.throws(() => readCanonicalConfig(root), isMalformedConfigError);
   } finally {
     rmTempDir(root);
   }
@@ -112,7 +122,7 @@ test("ignore not a string[] throws failed validation", () => {
   const root = mkTempDir();
   try {
     writeConfig(root, { ignore: [1, 2, 3] });
-    assert.throws(() => readCanonicalConfig(root), MalformedConfigError);
+    assert.throws(() => readCanonicalConfig(root), isMalformedConfigError);
   } finally {
     rmTempDir(root);
   }
@@ -122,7 +132,7 @@ test("overrides value not an object throws failed validation", () => {
   const root = mkTempDir();
   try {
     writeConfig(root, { overrides: { "svc-a": "library" } });
-    assert.throws(() => readCanonicalConfig(root), MalformedConfigError);
+    assert.throws(() => readCanonicalConfig(root), isMalformedConfigError);
   } finally {
     rmTempDir(root);
   }
@@ -132,7 +142,7 @@ test("a top-level array (not object) throws failed validation", () => {
   const root = mkTempDir();
   try {
     writeConfig(root, "[]");
-    assert.throws(() => readCanonicalConfig(root), MalformedConfigError);
+    assert.throws(() => readCanonicalConfig(root), isMalformedConfigError);
   } finally {
     rmTempDir(root);
   }
@@ -170,10 +180,7 @@ test("unknown top-level key is ignored (forward-compat), known keys returned", (
 test("a __proto__ override key does not pollute Object.prototype", () => {
   const root = mkTempDir();
   try {
-    writeConfig(
-      root,
-      '{ "overrides": { "__proto__": { "role": "app" } } }',
-    );
+    writeConfig(root, '{ "overrides": { "__proto__": { "role": "app" } } }');
     // Either it validates+sanitizes (dropping the dangerous key) or it throws;
     // in NO case may Object.prototype be polluted.
     try {
