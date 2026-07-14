@@ -42,6 +42,7 @@ function leaf(name, mode, role) {
     units: [],
     signals: {},
     role,
+    sources: [],
   };
 }
 
@@ -55,6 +56,7 @@ function monoWithChild(name, childName) {
     units: [leaf(childName, "single-repo", "app")],
     signals: {},
     role: "library",
+    sources: [],
   };
 }
 
@@ -115,7 +117,7 @@ test("renderTree emits header + box-drawing tree with nested continuation", () =
     out.includes("│  └─ a-mono/pkg [single-repo, app]"),
     "nested child under │ continuation",
   );
-  assert.doesNotMatch(out, /\x1b\[/, "no ANSI escapes");
+  assert.equal(out.includes(String.fromCharCode(27)), false, "no ANSI escapes");
   assert.doesNotMatch(out, /\n$/, "no trailing newline");
 });
 
@@ -166,6 +168,8 @@ test("exitFor → 0 for an empty-diagnostics map", () => {
 // ── sanity: toJSON stays the --json seam (never JSON.stringify(pm)) ─────────
 
 test("toJSON of a synthetic map parses with schemaVersion 1", () => {
-  const parsed = JSON.parse(toJSON(buildMap([leaf("u", "single-repo", "app")])));
+  const parsed = JSON.parse(
+    toJSON(buildMap([leaf("u", "single-repo", "app")])),
+  );
   assert.equal(parsed.schemaVersion, 1);
 });

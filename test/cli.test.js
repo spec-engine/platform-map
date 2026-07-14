@@ -50,7 +50,11 @@ test("default human mode: diagnostic-producing fixture separates streams (SC2)",
   // (a) stderr CONTAINS the diagnostic code …
   assert.match(r.stderr, /MALFORMED_CONFIG/, "diagnostic → stderr");
   // (b) … and stdout does NOT.
-  assert.doesNotMatch(r.stdout, /MALFORMED_CONFIG/, "SC2: no diag byte on stdout");
+  assert.doesNotMatch(
+    r.stdout,
+    /MALFORMED_CONFIG/,
+    "SC2: no diag byte on stdout",
+  );
   assert.match(r.stdout, /monorepo-pnpm \(monorepo\)/, "tree header on stdout");
 });
 
@@ -90,7 +94,11 @@ test("--version → exit 0, prints the package.json version", () => {
     r.stdout.includes(PKG_VERSION),
     `expected stdout to include version ${PKG_VERSION}, got: ${r.stdout}`,
   );
-  assert.equal(r.stdout.includes("__CLI_VERSION__"), false, "token substituted");
+  assert.equal(
+    r.stdout.includes("__CLI_VERSION__"),
+    false,
+    "token substituted",
+  );
 });
 
 test("--help → exit 0, non-empty, names the init subcommand", () => {
