@@ -22,12 +22,14 @@ import type {
   Adapter,
   AdapterContext,
   AdapterResult,
+  CanonicalSideChannel,
   PartialUnit,
 } from "./adapters/index.js";
 import { PRECEDENCE, selectAdapters } from "./adapters/index.js";
 import { workspaceAdapter } from "./adapters/workspace.js";
+import { readCanonicalConfig } from "./config.js";
 import { detect } from "./detect.js";
-import { RootNotFoundError } from "./errors.js";
+import { MalformedConfigError, RootNotFoundError } from "./errors.js";
 import { resolveWithinRoot } from "./internal/path-guard.js";
 import { probeRef } from "./internal/ref-probe.js";
 import { serialize } from "./internal/serialize.js";
@@ -58,6 +60,27 @@ function malformedConfigDiagnostic(
     path: source,
     message: `MALFORMED_CONFIG: ${source} adapter failed: ${reason}`,
   };
+}
+
+/** A canonical `overrides` key that matches no assembled unit is a stale/honest
+ *  mistake: surface a warning (never a throw) and ignore the override. Reuses
+ *  the MALFORMED_CONFIG code (config-shaped honesty), severity "warning". */
+function staleOverrideDiagnostic(unitName: string): Diagnostic {
+  return {
+    code: "MALFORMED_CONFIG",
+    severity: "warning",
+    path: unitName,
+    message: `MALFORMED_CONFIG: overrides names unit "${unitName}" which does not exist — override ignored`,
+  };
+}
+
+/** Collects every assembled unit name, recursing into nested monorepo units[],
+ *  so the overrides-honesty check matches units at any depth. */
+function collectUnitNames(units: Unit[], into: Set<string>): void {
+  for (const u of units) {
+    into.add(u.name);
+    if (u.units.length > 0) collectUnitNames(u.units, into);
+  }
 }
 
 /** Gap-fills map-owned census facts onto a unit's signals WITHOUT overwriting
@@ -142,16 +165,30 @@ export async function map(
   root: string,
   opts: MapOptions = {},
 ): Promise<PlatformMap> {
+  // SEC-01 hard-error #2: a PRESENT-but-malformed platform-map.json throws
+  // MalformedConfigError before detection/adapters run. This pre-read exists so
+  // the config's `ignore` can be threaded into detect()'s sibling scan (the
+  // pre-detection chicken-and-egg) AND is guarded by the canonical adapter's
+  // CFG-09 disable toggle (disabled => never read the file). The canonical
+  // adapter re-reads the (now-known-valid) config in the fold to produce its
+  // units + side-channel; the two reads always agree (no writes, same process).
+  const canonicalEnabled = opts.adapters?.canonical !== false;
+  const preConfig = canonicalEnabled ? readCanonicalConfig(root) : null;
+  const effectiveIgnore = [
+    ...(opts.ignore ?? []),
+    ...(preConfig?.ignore ?? []),
+  ];
+
   // detect() is the throwing gate: it performs the nonexistent-root check and
   // throws RootNotFoundError (SEC-01) before any adapter runs.
   const detection = detect(root, {
     scanRoot: opts.scanRoot,
-    ignore: opts.ignore,
+    ignore: effectiveIgnore,
   });
 
   const ctx: AdapterContext = {
     detection,
-    ignore: opts.ignore ?? [],
+    ignore: effectiveIgnore,
     options: opts,
   };
 
@@ -203,15 +240,32 @@ export async function map(
       const result = await adapter(root, ctx);
       results.push({ source: name, result });
     } catch (error) {
-      // SEC-01: RootNotFoundError propagates (the malformed-canonical rethrow
-      // branch is added in plan 04); every other adapter failure degrades.
-      if (error instanceof RootNotFoundError) throw error;
+      // SEC-01: the TWO hard-error classes propagate — RootNotFoundError and
+      // MalformedConfigError (a present-but-broken canonical config). EVERY
+      // other adapter failure degrades to a MALFORMED_CONFIG diagnostic; that
+      // canonical-vs-adapter asymmetry is the core of SEC-01.
+      if (
+        error instanceof RootNotFoundError ||
+        error instanceof MalformedConfigError
+      ) {
+        throw error;
+      }
       extraDiagnostics.push(malformedConfigDiagnostic(name, error));
     }
   }
 
-  // canonicalDeclaredUnits is false until plan 04 wires the canonical adapter.
-  const merged = merge(results, false);
+  // The canonical adapter surfaces the promotion-gate flag + name/overrides via
+  // its typed side-channel; every other adapter leaves it undefined.
+  let canonicalSide: CanonicalSideChannel | undefined;
+  for (const r of results) {
+    if (r.source === "canonical" && r.result.canonical !== undefined) {
+      canonicalSide = r.result.canonical;
+    }
+  }
+
+  // Promotion gate ("detection proposes, config disposes"): declared units[]
+  // turns unconfirmed siblings into UNCONFIGURED_SIBLING diagnostics.
+  const merged = merge(results, canonicalSide?.declaredUnits ?? false);
 
   // map() owns the per-unit fs signal census + DET-02 monorepo recursion
   // (CONTEXT signal-ownership split). Census diagnostics join the map's.
@@ -236,10 +290,25 @@ export async function map(
       }),
   );
 
+  // Overrides-honesty check (Assumption A3): an overrides key naming no
+  // assembled unit is a stale mistake — warn + ignore (never throw). Valid
+  // overrides are left on the config for Phase-3 role derivation; role stays
+  // "unknown" this phase. Dangerous keys were already stripped by config.ts.
+  if (canonicalSide?.overrides !== undefined) {
+    const unitNames = new Set<string>();
+    collectUnitNames(merged.units, unitNames);
+    for (const key of Object.keys(canonicalSide.overrides)) {
+      if (!unitNames.has(key)) {
+        extraDiagnostics.push(staleOverrideDiagnostic(key));
+      }
+    }
+  }
+
   const pm: PlatformMap = {
-    // basename() never leaks an absolute path; fall back to a fixed placeholder
+    // config.name is authoritative when present (CFG-01); else basename(root),
+    // which never leaks an absolute path — fall back to a fixed placeholder
     // (never raw root) when basename is empty (errors.ts discipline).
-    name: path.basename(root) || "(root)",
+    name: canonicalSide?.name ?? (path.basename(root) || "(root)"),
     root,
     mode: detection.mode,
     units: merged.units,

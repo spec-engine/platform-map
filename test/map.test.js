@@ -13,7 +13,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { map, RootNotFoundError } from "../dist/index.mjs";
+import {
+  MalformedConfigError,
+  map,
+  RootNotFoundError,
+} from "../dist/index.mjs";
 import { toJSON } from "../dist/internal/serialize.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -264,4 +268,196 @@ test("map() on a nonexistent root rejects with RootNotFoundError", async () => {
     () => map(path.join(fixturesDir, "does-not-exist")),
     RootNotFoundError,
   );
+});
+
+// ── CFG-01/CFG-02/SEC-01: canonical platform-map.json authority ────────────
+
+function writeCanonical(dir, config) {
+  fs.writeFileSync(
+    path.join(dir, "platform-map.json"),
+    typeof config === "string" ? config : JSON.stringify(config),
+  );
+}
+
+// A canonical config declaring units[] disposes: unconfirmed siblings become
+// UNCONFIGURED_SIBLING diagnostics, not promoted units (Pattern 3 promotion gate).
+test("map() with a canonical units[] suppresses sibling promotion (UNCONFIGURED_SIBLING)", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
+  try {
+    // Two sibling repos in the parent that WOULD be promoted without canonical.
+    for (const name of ["repo-a", "repo-b"]) {
+      fs.mkdirSync(path.join(parent, name, ".git"), { recursive: true });
+    }
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(path.join(workdir, "pkg"), { recursive: true });
+    // Canonical declares one in-root unit -> declaredUnits gate fires.
+    writeCanonical(workdir, { units: [{ name: "pkg", path: "pkg" }] });
+
+    const pm = await map(workdir);
+
+    const pkg = pm.units.find((u) => u.name === "pkg");
+    assert.ok(pkg, "declared canonical unit 'pkg' is authoritative");
+    assert.ok(
+      pkg.sources.includes("canonical"),
+      `expected 'canonical' source, got ${JSON.stringify(pkg.sources)}`,
+    );
+    // Siblings are NOT promoted to units.
+    assert.equal(
+      pm.units.some((u) => u.name === "repo-a" || u.name === "repo-b"),
+      false,
+      "siblings must not be promoted when canonical declares units[]",
+    );
+    assert.ok(
+      pm.diagnostics.some((d) => d.code === "UNCONFIGURED_SIBLING"),
+      "expected UNCONFIGURED_SIBLING diagnostics for the suppressed siblings",
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+// Gate is not inverted: a canonical config WITHOUT units[] still promotes siblings.
+test("map() with a canonical config but no units[] still promotes siblings", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
+  try {
+    fs.mkdirSync(path.join(parent, "repo-a", ".git"), { recursive: true });
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir, { recursive: true });
+    writeCanonical(workdir, { name: "labeled" }); // no units[]
+
+    const pm = await map(workdir);
+    assert.equal(
+      pm.name,
+      "labeled",
+      "canonical name is authoritative (CFG-01)",
+    );
+    assert.ok(
+      pm.units.some(
+        (u) => u.name === "repo-a" && u.sources.includes("siblings"),
+      ),
+      "sibling must still be promoted when canonical declares no units[]",
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+// SEC-01 hard error #2: a PRESENT-but-malformed canonical config throws.
+test("map() rejects with MalformedConfigError on a malformed platform-map.json", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
+  try {
+    writeCanonical(root, "{ this is not valid json");
+    await assert.rejects(() => map(root), MalformedConfigError);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// SEC-01 asymmetry: a malformed ADAPTER source degrades to a diagnostic while a
+// VALID canonical config is applied — map() resolves, never throws.
+test("map() resolves (with MALFORMED_CONFIG) when an adapter source is malformed but canonical is valid", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
+  try {
+    fs.writeFileSync(
+      path.join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    fs.mkdirSync(path.join(root, "packages", "bad"), { recursive: true });
+    // Invalid package name -> SEC-03 adapter-level MALFORMED_CONFIG (not a throw).
+    fs.writeFileSync(
+      path.join(root, "packages", "bad", "package.json"),
+      JSON.stringify({ name: "Bad Name" }),
+    );
+    writeCanonical(root, { name: "still-ok" });
+
+    let pm;
+    await assert.doesNotReject(async () => {
+      pm = await map(root);
+    });
+    assert.equal(pm.name, "still-ok", "valid canonical name is applied");
+    assert.ok(
+      pm.diagnostics.some((d) => d.code === "MALFORMED_CONFIG"),
+      "expected a MALFORMED_CONFIG diagnostic from the degraded adapter source",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Overrides honesty (Assumption A3): an override naming no assembled unit warns
+// and is ignored — never throws — and role stays "unknown" this phase.
+test("map() warns and ignores a canonical override naming a non-existent unit", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
+  try {
+    fs.mkdirSync(path.join(root, "pkg"), { recursive: true });
+    writeCanonical(root, {
+      units: [{ name: "pkg", path: "pkg" }],
+      overrides: { "ghost-unit": { role: "app" } },
+    });
+
+    let pm;
+    await assert.doesNotReject(async () => {
+      pm = await map(root);
+    });
+    assert.ok(
+      pm.diagnostics.some(
+        (d) =>
+          d.severity === "warning" &&
+          d.code === "MALFORMED_CONFIG" &&
+          /ghost-unit/.test(d.message ?? ""),
+      ),
+      "expected a warning diagnostic naming the stale override",
+    );
+    for (const u of pm.units) assert.equal(u.role, "unknown");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// MODEL-06 declared-ref-wins: a canonical unit declaring a ref keeps it unprobed;
+// a canonical unit without a ref is resolved by map()'s per-unit probe loop —
+// proving MODEL-06 applies to ALL kind:"repo" units, not only siblings.
+test("map() keeps a canonical declared ref and probes a canonical unit that omits ref", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
+  try {
+    const pinned = path.join(root, "pinned");
+    const probed = path.join(root, "probed");
+    fs.mkdirSync(pinned, { recursive: true });
+    fs.mkdirSync(probed, { recursive: true });
+    let expectProbed = null;
+    if (GIT) {
+      spawnSync("git", ["init", "-q"], { cwd: probed, stdio: "ignore" });
+      spawnSync(
+        "git",
+        [
+          "symbolic-ref",
+          "refs/remotes/origin/HEAD",
+          "refs/remotes/origin/main",
+        ],
+        { cwd: probed, stdio: "ignore" },
+      );
+      expectProbed = "main";
+    } else {
+      fs.mkdirSync(path.join(probed, ".git"));
+    }
+    writeCanonical(root, {
+      units: [
+        { name: "pinned", path: "pinned", ref: "pinned-ref" },
+        { name: "probed", path: "probed" },
+      ],
+    });
+
+    const pm = await map(root);
+    const pinnedUnit = pm.units.find((u) => u.name === "pinned");
+    const probedUnit = pm.units.find((u) => u.name === "probed");
+    assert.equal(pinnedUnit.ref, "pinned-ref", "declared ref wins (unprobed)");
+    assert.equal(
+      probedUnit.ref,
+      expectProbed,
+      "ref-less canonical unit is resolved by map()'s MODEL-06 probe",
+    );
+    assert.notEqual(probedUnit.ref, "origin/HEAD");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

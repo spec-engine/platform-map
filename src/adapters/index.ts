@@ -20,8 +20,10 @@ import type {
   Edge,
   MapOptions,
   Mode,
+  Role,
   UnitSignals,
 } from "../types.js";
+import { canonicalAdapter } from "./canonical.js";
 import { siblingsAdapter } from "./siblings.js";
 import { workspaceAdapter } from "./workspace.js";
 
@@ -51,13 +53,32 @@ export interface PartialUnit {
   provisional?: boolean;
 }
 
+/** Config-level facts the CANONICAL adapter alone surfaces back to map() for
+ *  post-merge application: the promotion-gate flag plus the name/ignore/overrides
+ *  that live on the config object rather than on any single unit. Every other
+ *  adapter leaves `AdapterResult.canonical` undefined. */
+export interface CanonicalSideChannel {
+  /** Overrides PlatformMap.name when present (else basename(root)). */
+  name?: string;
+  /** Additional ignore globs to merge with adapter-supplied ignores. */
+  ignore?: string[];
+  /** Per-unit role overrides; validity-vs-assembled-units is checked in map(). */
+  overrides?: Record<string, { role?: Role }>;
+  /** The promotion gate ("config disposes"): true iff config declared a
+   *  non-empty units[] — turns unconfirmed siblings into UNCONFIGURED_SIBLING. */
+  declaredUnits: boolean;
+}
+
 /** An adapter's full output. `edges` is always [] in Phase 2 (edges are
  *  Phase 3, GRAPH-01). Parse/read failures degrade to MALFORMED_CONFIG
- *  diagnostics here — only canonical (config.ts) and RootNotFoundError throw. */
+ *  diagnostics here — only canonical (config.ts) and RootNotFoundError throw.
+ *  `canonical` is the canonical adapter's typed side-channel (undefined for all
+ *  other adapters). */
 export interface AdapterResult {
   partialUnits: PartialUnit[];
   edges: Edge[];
   diagnostics: Diagnostic[];
+  canonical?: CanonicalSideChannel;
 }
 
 /** Pure source reader. May be sync or async (siblings runs a bounded ref
@@ -84,6 +105,7 @@ export const PRECEDENCE: Array<AdapterName | "caller"> = [
  *  canonical/dark-factory/spec-engine arrive in later Phase-2 plans with no
  *  change to this contract. */
 const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
+  canonical: canonicalAdapter,
   workspace: workspaceAdapter,
   siblings: siblingsAdapter,
 };
