@@ -9,10 +9,13 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import { readFileSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { map } from "../dist/index.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(here, "fixtures");
@@ -157,4 +160,71 @@ test("graph --dot: edges fixture → DOT digraph on stdout, not JSON", () => {
   assert.match(r.stdout, /^digraph platform \{/, "starts with the DOT header");
   assert.match(r.stdout, / -> /, "contains at least one edge arrow");
   assert.throws(() => JSON.parse(r.stdout), "DOT is not JSON");
+});
+
+// ── CLI-04: `init` — the single writer, round-trip + all three refuse gates ──
+// Seed a clean single-repo into a temp dir (never mutate the committed fixture),
+// then exercise the write, the round-trip through map(), and the refuse gates.
+
+function seedSingleRepo() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-init-"));
+  fs.cpSync(SINGLE_REPO, tmp, { recursive: true });
+  return tmp;
+}
+
+test("init --yes: writes platform-map.json, exit 0, and the file round-trips through map()", async () => {
+  const tmp = seedSingleRepo();
+  try {
+    const r = run(["init", "--yes", tmp]);
+    assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+    const configPath = path.join(tmp, "platform-map.json");
+    assert.ok(fs.existsSync(configPath), "platform-map.json was written");
+    // round-trip: the fresh config validates via map() (no MalformedConfigError)
+    // and reflects the proposed name (basename of the temp dir).
+    let pm;
+    await assert.doesNotReject(async () => {
+      pm = await map(tmp);
+    });
+    assert.equal(pm.name, path.basename(tmp), "written name round-trips");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("init --yes on an already-written dir: exit 1, refuses to clobber, file unchanged", () => {
+  const tmp = seedSingleRepo();
+  try {
+    const first = run(["init", "--yes", tmp]);
+    assert.equal(first.status, 0);
+    const configPath = path.join(tmp, "platform-map.json");
+    const before = fs.readFileSync(configPath, "utf8");
+    const second = run(["init", "--yes", tmp]);
+    assert.equal(second.status, 1, "refuse-existing → exit 1");
+    assert.match(second.stderr, /already exists|refus/);
+    assert.equal(
+      fs.readFileSync(configPath, "utf8"),
+      before,
+      "original file unchanged",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("init without --yes in a non-TTY (spawned): exit 1, /--yes/ on stderr, writes nothing, no hang", () => {
+  const tmp = seedSingleRepo();
+  try {
+    // spawnSync gives the child no controlling TTY → stdin.isTTY is undefined,
+    // so this naturally exercises the non-interactive gate (must not hang).
+    const r = run(["init", tmp]);
+    assert.equal(r.status, 1, "non-TTY without --yes → exit 1");
+    assert.match(r.stderr, /--yes/, "tells the user to pass --yes");
+    assert.equal(
+      fs.existsSync(path.join(tmp, "platform-map.json")),
+      false,
+      "nothing written when the write is refused",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

@@ -12,9 +12,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { serialize, toJSON } from "../dist/index.mjs";
 import {
+  buildProposal,
   exitFor,
   graphProjection,
   parseArgs,
+  parseYesNo,
   renderTree,
   toDot,
 } from "../dist/internal/cli-render.mjs";
@@ -277,4 +279,91 @@ test("graphProjection is byte-stable across shuffled input of the same logical m
     ),
   );
   assert.equal(shuffled, ordered);
+});
+
+// ── buildProposal (CLI-04, Open Q2): the pure proposal shape from Detection ──
+// White-box over synthetic Detection literals — no fixture/I/O. Single-repo and
+// monorepo emit `{ name }` only (the workspace adapter re-discovers members);
+// multi-repo carries units[] from siblings (name/path/ref only, ref omitted-when-null).
+
+test("buildProposal single-repo → { name } only, no units key", () => {
+  const p = buildProposal({ mode: "single-repo" }, "acme");
+  assert.deepEqual(p, { name: "acme" });
+  assert.equal(Object.hasOwn(p, "units"), false, "no units key for single-repo");
+});
+
+test("buildProposal monorepo → { name } only (workspace adapter re-discovers)", () => {
+  const p = buildProposal(
+    { mode: "monorepo", workspaceGlobs: ["packages/*"] },
+    "acme",
+  );
+  assert.deepEqual(p, { name: "acme" });
+  assert.equal(Object.hasOwn(p, "units"), false, "no units key for monorepo");
+});
+
+test("buildProposal multi-repo → { name, units:[...] } from siblings, ref omitted-when-null, no metadata leak", () => {
+  const p = buildProposal(
+    {
+      mode: "multi-repo",
+      siblings: [
+        {
+          name: "api",
+          path: "../api",
+          ref: "main",
+          hasDfPointer: false,
+          conflict: null,
+        },
+        {
+          name: "web",
+          path: "../web",
+          ref: null,
+          hasDfPointer: false,
+          conflict: null,
+        },
+      ],
+    },
+    "acme",
+  );
+  assert.deepEqual(p, {
+    name: "acme",
+    units: [
+      { name: "api", path: "../api", ref: "main" },
+      { name: "web", path: "../web" },
+    ],
+  });
+  // no hasDfPointer/conflict leak into any carried unit.
+  for (const u of p.units) {
+    assert.equal(Object.hasOwn(u, "hasDfPointer"), false);
+    assert.equal(Object.hasOwn(u, "conflict"), false);
+  }
+});
+
+test("buildProposal output is fully JSON-serializable (round-trips through JSON)", () => {
+  const p = buildProposal(
+    {
+      mode: "multi-repo",
+      siblings: [
+        {
+          name: "api",
+          path: "../api",
+          ref: "main",
+          hasDfPointer: false,
+          conflict: null,
+        },
+      ],
+    },
+    "acme",
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(p)), p);
+});
+
+// ── parseYesNo (CLI-04): /^y(es)?$/i.test(trim); everything else false ──────
+
+test("parseYesNo: y/Y/yes/YES/' y ' → true; ''/n/no/x → false", () => {
+  for (const yes of ["y", "Y", "yes", "YES", " y "]) {
+    assert.equal(parseYesNo(yes), true, `${JSON.stringify(yes)} → true`);
+  }
+  for (const no of ["", "n", "no", "x"]) {
+    assert.equal(parseYesNo(no), false, `${JSON.stringify(no)} → false`);
+  }
 });
