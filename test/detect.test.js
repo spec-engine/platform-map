@@ -255,6 +255,45 @@ test("scanSiblings sorts by name identically regardless of readdir order (DETR-0
   }
 });
 
+// ── WR-02: `ignore` is matched as a GLOB, not just an exact string ──────────
+
+test("scanSiblings excludes siblings via an ignore glob and keeps exact-name ignores (WR-02)", () => {
+  const tempRoot = mkTempDir();
+  try {
+    for (const name of ["web-repo", "api-repo", "tmp-repo"]) {
+      const dir = path.join(tempRoot, name);
+      fs.mkdirSync(dir);
+      mkGitMarker(dir);
+    }
+
+    // A wildcard glob excludes every matching basename...
+    const globbed = scanSiblings(tempRoot, ".", ["*-repo"], () => [
+      "web-repo",
+      "api-repo",
+      "tmp-repo",
+    ]);
+    assert.deepEqual(
+      globbed.siblings.map((s) => s.name),
+      [],
+      "the '*-repo' glob excludes all three siblings",
+    );
+
+    // ...while a bare literal still matches only itself (exact-name subset).
+    const exact = scanSiblings(tempRoot, ".", ["api-repo"], () => [
+      "web-repo",
+      "api-repo",
+      "tmp-repo",
+    ]);
+    assert.deepEqual(
+      exact.siblings.map((s) => s.name).sort(),
+      ["tmp-repo", "web-repo"],
+      "an exact-name ignore excludes only that entry (glob subset)",
+    );
+  } finally {
+    rmTempDir(tempRoot);
+  }
+});
+
 test("scanSiblings drops a hostile readdir entry that escapes the scan directory with UNIT_PATH_ESCAPE (CR-01)", () => {
   const tempRoot = mkTempDir();
   try {

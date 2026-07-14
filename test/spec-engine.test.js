@@ -159,6 +159,60 @@ test("specEngineAdapter excludes an ignored sub-member (by basename)", () => {
   }
 });
 
+// ── WR-02: `ignore` is matched as a GLOB, not just an exact string ──────────
+
+test("specEngineAdapter excludes sub-members via a documented ignore glob (WR-02)", () => {
+  const root = mkTempDir();
+  try {
+    writeMember(root, {
+      specs: "spec-engine@3",
+      members: "packages/*",
+      // A documented glob form — must actually exclude, not silently no-op.
+      ignore: ["packages/cli"],
+    });
+    const result = specEngineAdapter(root, STUB_CTX, {
+      walk: () => ({
+        entries: ["packages/engine", "packages/cli"],
+        diagnostics: [],
+      }),
+      isDir: () => true,
+    });
+    const subs = result.partialUnits.filter((u) => u.path !== ".");
+    assert.deepEqual(
+      subs.map((u) => u.path),
+      ["packages/engine"],
+      "the 'packages/*'-shaped ignore glob excludes packages/cli",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEngineAdapter still honors an exact-name ignore as a glob subset (WR-02)", () => {
+  const root = mkTempDir();
+  try {
+    writeMember(root, {
+      specs: "spec-engine@3",
+      members: "packages/*",
+      ignore: ["engine"], // exact basename — a literal is a glob that matches itself
+    });
+    const result = specEngineAdapter(root, STUB_CTX, {
+      walk: () => ({
+        entries: ["packages/engine", "packages/cli"],
+        diagnostics: [],
+      }),
+      isDir: () => true,
+    });
+    const subs = result.partialUnits.filter((u) => u.path !== ".");
+    assert.deepEqual(
+      subs.map((u) => u.path),
+      ["packages/cli"],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // ── SEC-02 (T-02-22): an expanded path escaping the root is dropped ─────────
 
 test("specEngineAdapter drops an expanded sub-member escaping the root with UNIT_PATH_ESCAPE", () => {

@@ -170,8 +170,15 @@ export function specEngineAdapter(
     if (!isDir(subAbs)) continue;
     // Never shadow the canonical row: a basename `spec-engine` dir is skipped.
     if (path.basename(rel) === "spec-engine") continue;
-    // `ignore` excludes by full rel path or by basename (SE-side exclude semantics).
-    if (ignore.includes(rel) || ignore.includes(path.basename(rel))) continue;
+    // WR-02: `ignore` is documented as globs, so exclude by matching the
+    // rel path OR the basename through the zero-dep, ReDoS-safe `matchGlob`
+    // (a documented glob like "packages/*" now actually excludes; an exact
+    // name/path still matches itself as a subset). matchGlob's throwaway
+    // UNMATCHED_PATTERN diagnostics are discarded — an ignore glob that
+    // matches nothing here is normal, not a reportable error.
+    if (matchGlob(ignore, [rel, path.basename(rel)]).matched.length > 0) {
+      continue;
+    }
     // T-02-22: an expanded sub-member path escaping the root is dropped.
     const guard = resolveWithinRoot(root, rel);
     if (!guard.ok) {

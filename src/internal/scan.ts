@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Detection, Diagnostic } from "../types.js";
+import { matchGlob } from "./glob.js";
 import { resolveWithinRoot } from "./path-guard.js";
 
 type Sibling = NonNullable<Detection["siblings"]>[number];
@@ -34,8 +35,15 @@ function existsAt(entryPath: string, name: string): boolean {
   }
 }
 
+// WR-02: `ignore` is documented as GLOBS (types.ts), so match each candidate
+// through the zero-dep, ReDoS-safe `matchGlob` rather than exact-string
+// `includes`. A literal with no wildcard chars still matches itself, so exact
+// names remain a strict subset of the glob behavior. matchGlob's throwaway
+// UNMATCHED_PATTERN diagnostics are discarded here — an ignore glob that
+// matches nothing for a given entry is normal, not a reportable error.
 function isIgnored(name: string, ignore: string[] | undefined): boolean {
-  return ignore !== undefined && ignore.includes(name);
+  if (ignore === undefined || ignore.length === 0) return false;
+  return matchGlob(ignore, [name]).matched.length > 0;
 }
 
 function compareByName(a: Sibling, b: Sibling): number {
