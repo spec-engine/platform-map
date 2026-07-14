@@ -144,13 +144,18 @@ try {
   if (!fs.existsSync(binPath)) fail(`installed bin not found at ${binPath}`);
   log("running installed `platform-map --json` bin…");
   const cliRes = run(binPath, ["--json", fixture], { cwd: cjsDir });
+  // Parse and shape-check in separate steps so each failure reports its OWN
+  // accurate diagnostic. A prior nested try/catch let the inner shape-check
+  // fail() be swallowed by the outer catch, misreporting valid-but-non-object
+  // JSON as "not valid JSON". Only a genuine JSON.parse throw hits the catch.
+  let parsed;
   try {
-    const parsed = JSON.parse(cliRes.stdout);
-    if (!parsed || typeof parsed !== "object") {
-      fail("CLI --json output did not parse to an object");
-    }
+    parsed = JSON.parse(cliRes.stdout);
   } catch {
     fail(`CLI --json output is not valid JSON:\n${cliRes.stdout}`);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    fail("CLI --json output did not parse to an object");
   }
   log("cli --json OK — valid JSON, exit 0");
 
