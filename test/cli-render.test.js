@@ -10,11 +10,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { toJSON } from "../dist/index.mjs";
+import { serialize, toJSON } from "../dist/index.mjs";
 import {
   exitFor,
+  graphProjection,
   parseArgs,
   renderTree,
+  toDot,
 } from "../dist/internal/cli-render.mjs";
 
 // ── A synthetic PlatformMap literal (>=1 nested units[]) ────────────────────
@@ -172,4 +174,101 @@ test("toJSON of a synthetic map parses with schemaVersion 1", () => {
     toJSON(buildMap([leaf("u", "single-repo", "app")])),
   );
   assert.equal(parsed.schemaVersion, 1);
+});
+
+// ── toDot (CLI-03): Graphviz digraph from the serialize()-sorted edge set ────
+// A synthetic multi-repo map whose units are workspace-packages a/b/c with two
+// edges given OUT of (from,to) order, so the DOT proves it renders in the
+// serialize() order (a->c before b->a), not the input order.
+
+function wp(name) {
+  return {
+    name,
+    path: name,
+    kind: "workspace-package",
+    mode: "single-repo",
+    ref: null,
+    units: [],
+    signals: {},
+    role: "library",
+    sources: [],
+  };
+}
+
+function buildEdgeMap(units, edges) {
+  return {
+    name: "myplat",
+    root: ".",
+    mode: "multi-repo",
+    schemaVersion: 1,
+    edges,
+    diagnostics: [],
+    units,
+  };
+}
+
+const EDGE_UNITS = [wp("a"), wp("b"), wp("c")];
+const EDGES = [
+  { from: "b", to: "a", via: "workspace-dependency" },
+  { from: "a", to: "c", via: "workspace-dependency" },
+];
+
+test("toDot emits digraph header/footer + one arrow per edge in serialize order", () => {
+  const out = toDot(buildEdgeMap(EDGE_UNITS, EDGES));
+  const lines = out.split("\n");
+  assert.equal(lines[0], "digraph platform {", "first line is the digraph header");
+  assert.equal(lines[lines.length - 1], "}", "last line closes the digraph");
+  // serialize() sorts edges by (from,to): a->c precedes b->a regardless of input.
+  assert.equal(lines[1], '  "a" -> "c";');
+  assert.equal(lines[2], '  "b" -> "a";');
+  assert.doesNotMatch(out, /\n$/, "no trailing newline");
+});
+
+test("toDot on a zero-edge map yields an empty-bodied digraph", () => {
+  const out = toDot(buildEdgeMap([wp("solo")], []));
+  assert.equal(out, "digraph platform {\n}");
+});
+
+// ── graphProjection (CLI-03, Open Q1): fully-serializable {nodes,edges,roots,leaves,cycles}
+
+test("graphProjection returns the {nodes,edges,roots,leaves,cycles} shape reusing graph()", () => {
+  const pm = buildEdgeMap(EDGE_UNITS, EDGES);
+  const proj = graphProjection(pm);
+  assert.deepEqual(Object.keys(proj).sort(), [
+    "cycles",
+    "edges",
+    "leaves",
+    "nodes",
+    "roots",
+  ]);
+  // nodes: sorted list of ALL unit names.
+  assert.deepEqual(proj.nodes, ["a", "b", "c"]);
+  // edges === serialize(pm).edges (sorted, reused — not re-derived by the CLI).
+  assert.deepEqual(proj.edges, serialize(pm).edges);
+  assert.ok(proj.edges.length >= 1, "non-empty edge set");
+  // roots = in-degree 0 (b), leaves = out-degree 0 (c), no cycles.
+  assert.deepEqual(proj.roots, ["b"]);
+  assert.deepEqual(proj.leaves, ["c"]);
+  assert.deepEqual(proj.cycles, []);
+});
+
+test("graphProjection is JSON-serializable (no raw Map/Set leaked)", () => {
+  const proj = graphProjection(buildEdgeMap(EDGE_UNITS, EDGES));
+  assert.doesNotThrow(() => JSON.stringify(proj));
+});
+
+test("graphProjection is byte-stable across shuffled input of the same logical map", () => {
+  const ordered = JSON.stringify(graphProjection(buildEdgeMap(EDGE_UNITS, EDGES)));
+  const shuffled = JSON.stringify(
+    graphProjection(
+      buildEdgeMap(
+        [wp("c"), wp("a"), wp("b")],
+        [
+          { from: "a", to: "c", via: "workspace-dependency" },
+          { from: "b", to: "a", via: "workspace-dependency" },
+        ],
+      ),
+    ),
+  );
+  assert.equal(shuffled, ordered);
 });

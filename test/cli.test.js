@@ -19,6 +19,7 @@ const fixturesDir = path.join(here, "fixtures");
 const CLI = path.join(here, "..", "dist", "platform-map.mjs");
 const SINGLE_REPO = path.join(fixturesDir, "single-repo");
 const MONOREPO_PNPM = path.join(fixturesDir, "monorepo-pnpm");
+const MONOREPO_EDGES = path.join(fixturesDir, "monorepo-edges");
 const PKG_VERSION = JSON.parse(
   readFileSync(path.join(here, "..", "package.json"), "utf8"),
 ).version;
@@ -106,4 +107,54 @@ test("--help → exit 0, non-empty, names the init subcommand", () => {
   assert.equal(r.status, 0);
   assert.ok(r.stdout.length > 0);
   assert.match(r.stdout, /init/);
+});
+
+// ── CLI-03: `detect` → detect() JSON on stdout, 0-or-throw, no diagnostics ───
+
+test("detect: monorepo fixture → JSON with a mode field on stdout, empty stderr, exit 0", () => {
+  const r = run(["detect", MONOREPO_PNPM]);
+  assert.equal(r.status, 0);
+  let parsed;
+  assert.doesNotThrow(() => {
+    parsed = JSON.parse(r.stdout);
+  });
+  assert.ok(
+    Object.hasOwn(parsed, "mode"),
+    "detect JSON carries a `mode` field",
+  );
+  assert.equal(r.stderr, "", "detect has no diagnostics → nothing on stderr");
+});
+
+test("detect: nonexistent root → exit 1, 'root not found' on stderr", () => {
+  const r = run(["detect", path.join(fixturesDir, "does-not-exist")]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /root not found/);
+});
+
+// ── CLI-03: `graph` → {nodes,edges,roots,leaves,cycles} projection on stdout ─
+
+test("graph: edges fixture → projection JSON with the five keys, non-empty edges", () => {
+  const r = run(["graph", MONOREPO_EDGES]);
+  assert.equal(r.status, 0);
+  let parsed;
+  assert.doesNotThrow(() => {
+    parsed = JSON.parse(r.stdout);
+  });
+  for (const key of ["nodes", "edges", "roots", "leaves", "cycles"]) {
+    assert.ok(Object.hasOwn(parsed, key), `projection has key ${key}`);
+  }
+  assert.ok(
+    Array.isArray(parsed.edges) && parsed.edges.length > 0,
+    "the edges fixture produces a non-empty edge set",
+  );
+});
+
+// ── CLI-03: `graph --dot` → minimal Graphviz DOT on stdout (not JSON) ────────
+
+test("graph --dot: edges fixture → DOT digraph on stdout, not JSON", () => {
+  const r = run(["graph", "--dot", MONOREPO_EDGES]);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^digraph platform \{/, "starts with the DOT header");
+  assert.match(r.stdout, / -> /, "contains at least one edge arrow");
+  assert.throws(() => JSON.parse(r.stdout), "DOT is not JSON");
 });
