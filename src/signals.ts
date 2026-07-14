@@ -14,6 +14,15 @@
 //  - linkage signals (hasDfPointer/hasSpecEngineConfig) — the owning adapters,
 //  - any write/network/subprocess (SEC-05) — pure reads only.
 //
+// GRAPH-01 (Phase 3): the census ALSO returns `workspaceDepNames` — the union of
+// the four dep-field key-sets — purely so map() can feed edges.ts. These dep
+// NAMES are NEVER entered into UnitSignals (a dep list is not a signal); they
+// travel in a map()-local side-table and are only ever used as Map keys
+// downstream (edges.ts), so the prototype-pollution discipline below extends to
+// them: each dep field is read by KNOWN KEYS ONLY and guarded as a plain object
+// before Object.keys, and no untrusted dep-name key is ever assigned into a
+// plain object.
+//
 // Prototype-pollution guard (T-02-09): the parsed package.json is read by
 // KNOWN KEYS ONLY (never spread), so no untrusted key ever reaches the model.
 
@@ -106,6 +115,38 @@ function readPackageJson(dir: string): Record<string, unknown> | null {
   }
 }
 
+// The four package.json dep fields whose KEYS are workspace-dependency-edge
+// candidates (T-03-01: read by known keys only, never Object.keys(whole manifest)).
+// This is the documented CONTEXT superset of DF's three fields (adds
+// optionalDependencies) — edges may therefore differ from DF's live buildDepGraph
+// on optional deps, deliberately.
+const DEP_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
+
+/** Collects the union of the four dep fields' KEYS from a parsed package.json,
+ *  guarding each field is a plain object before Object.keys (T-03-01). Dep names
+ *  are only ever surfaced as Map keys downstream (edges.ts), never assigned into
+ *  a plain object, so a `__proto__`/`constructor` dep key cannot pollute. */
+function collectWorkspaceDepNames(
+  pkg: Record<string, unknown> | null,
+): string[] {
+  if (pkg === null) return [];
+  const names = new Set<string>();
+  for (const field of DEP_FIELDS) {
+    const value = pkg[field];
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      for (const key of Object.keys(value as Record<string, unknown>)) {
+        names.add(key);
+      }
+    }
+  }
+  return [...names];
+}
+
 function probePackageManager(dir: string): UnitSignals["packageManager"] {
   for (const [lockfile, manager] of LOCKFILE_PACKAGE_MANAGER) {
     if (existsAt(dir, lockfile)) return manager;
@@ -152,11 +193,13 @@ export function censusSignals(
 ): {
   signals: UnitSignals;
   diagnostics: Diagnostic[];
+  workspaceDepNames: string[];
 } {
   const signals: UnitSignals = {};
   const diagnostics: Diagnostic[] = [];
 
   const pkg = readPackageJson(absUnitDir);
+  const workspaceDepNames = collectWorkspaceDepNames(pkg);
   if (pkg !== null) {
     if (pkg.private === true) signals.private = true;
     if (pkg.exports !== undefined || pkg.main !== undefined) {
@@ -194,5 +237,5 @@ export function censusSignals(
   }
   for (const d of languageCensus.diagnostics) diagnostics.push(d);
 
-  return { signals, diagnostics };
+  return { signals, diagnostics, workspaceDepNames };
 }
