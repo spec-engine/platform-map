@@ -45,6 +45,12 @@ const SUBCOMMANDS = new Set<Command>(["detect", "graph", "init"]);
  * bare token is a usage error). Any unrecognized `-`-prefixed token sets `error`
  * and returns immediately. `--dot`/`--yes` handed to a non-owning command are
  * accepted-and-ignored, not a usage error (they are gated by command at dispatch).
+ *
+ * WR-02: a bare `--` is the POSIX end-of-options separator — every token AFTER it
+ * is a positional (subcommand-or-dir), never a flag. This is what makes a
+ * directory whose name legitimately starts with `-` reachable
+ * (`platform-map -- -weird` targets the dir `-weird`). Unknown-flag rejection
+ * still applies to real flags that appear BEFORE the `--`.
  */
 export function parseArgs(argv: string[]): Args {
   const a: Args = {
@@ -57,40 +63,48 @@ export function parseArgs(argv: string[]): Args {
     version: false,
   };
   let sawDir = false;
+  let optsEnded = false;
   for (const tok of argv) {
-    switch (tok) {
-      case "--json":
-        a.json = true;
-        break;
-      case "--dot":
-        a.dot = true;
-        break;
-      case "--yes":
-      case "-y":
-        a.yes = true;
-        break;
-      case "--help":
-      case "-h":
-        a.help = true;
-        break;
-      case "--version":
-      case "-V":
-        a.version = true;
-        break;
-      default:
-        if (tok.startsWith("-")) {
-          a.error = `unknown flag: ${tok}`;
-          return a;
-        }
-        if (a.command === "map" && SUBCOMMANDS.has(tok as Command)) {
-          a.command = tok as Command;
-        } else if (!sawDir) {
-          a.dir = tok;
-          sawDir = true;
-        } else {
-          a.error = `unexpected argument: ${tok}`;
-          return a;
-        }
+    if (!optsEnded) {
+      if (tok === "--") {
+        optsEnded = true;
+        continue;
+      }
+      switch (tok) {
+        case "--json":
+          a.json = true;
+          continue;
+        case "--dot":
+          a.dot = true;
+          continue;
+        case "--yes":
+        case "-y":
+          a.yes = true;
+          continue;
+        case "--help":
+        case "-h":
+          a.help = true;
+          continue;
+        case "--version":
+        case "-V":
+          a.version = true;
+          continue;
+      }
+      if (tok.startsWith("-")) {
+        a.error = `unknown flag: ${tok}`;
+        return a;
+      }
+    }
+    // Positional handling (subcommand-or-dir): reached for every non-flag token
+    // before `--`, and for EVERY token after `--` (so dash-prefixed dirs land here).
+    if (a.command === "map" && SUBCOMMANDS.has(tok as Command)) {
+      a.command = tok as Command;
+    } else if (!sawDir) {
+      a.dir = tok;
+      sawDir = true;
+    } else {
+      a.error = `unexpected argument: ${tok}`;
+      return a;
     }
   }
   return a;

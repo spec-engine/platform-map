@@ -104,6 +104,47 @@ test("parseArgs does not crash on later-slice tokens (detect/graph/init/--dot/--
   assert.doesNotThrow(() => parseArgs(["init", "--yes"]));
 });
 
+// ── WR-02: `--` end-of-options separator + dash-prefixed dirs ────────────────
+
+test("parseArgs(['--']) → no error, dir stays default (bare separator consumed)", () => {
+  const a = parseArgs(["--"]);
+  assert.equal(a.error, undefined, "bare -- is not an unknown flag");
+  assert.equal(a.dir, ".");
+});
+
+test("parseArgs(['--','-weird']) → dir '-weird', no error (dash-dir reachable)", () => {
+  const a = parseArgs(["--", "-weird"]);
+  assert.equal(a.error, undefined, "positional after -- is not flag-parsed");
+  assert.equal(a.dir, "-weird", "dash-prefixed positional taken as dir");
+});
+
+test("parseArgs(['detect','--','-weird']) → subcommand detect + dir '-weird'", () => {
+  const a = parseArgs(["detect", "--", "-weird"]);
+  assert.equal(a.command, "detect");
+  assert.equal(a.dir, "-weird");
+  assert.equal(a.error, undefined);
+});
+
+test("parseArgs(['--nope','--']) → still errors on a real unknown flag BEFORE --", () => {
+  const a = parseArgs(["--nope", "--"]);
+  assert.ok(a.error, "unknown flag before -- still rejected");
+  assert.match(a.error, /unknown flag: --nope/);
+});
+
+test("parseArgs(['--json','--','-x']) → flags before -- still parse; -x is the dir", () => {
+  const a = parseArgs(["--json", "--", "-x"]);
+  assert.equal(a.json, true, "--json before -- is honored");
+  assert.equal(a.dir, "-x", "-x after -- is the dir, not an unknown flag");
+  assert.equal(a.error, undefined);
+});
+
+test("parseArgs(['--','--json']) → --json after -- is a positional (dir), not the flag", () => {
+  const a = parseArgs(["--", "--json"]);
+  assert.equal(a.json, false, "--json after -- is NOT treated as a flag");
+  assert.equal(a.dir, "--json", "everything after -- is positional");
+  assert.equal(a.error, undefined);
+});
+
 // ── renderTree (CLI-01): shape, box-drawing, determinism, no absolute path ──
 
 test("renderTree emits header + box-drawing tree with nested continuation", () => {
