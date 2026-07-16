@@ -512,6 +512,50 @@ test("containment: marker root hint resolving outside the boundary -> UNIT_PATH_
   }
 });
 
+test("WR-02: a symlinked marker hint target physically outside the boundary -> escape, never followed", (t) => {
+  const parent = mktree();
+  try {
+    // outside/: a definition physically OUTSIDE the boundary (plat)
+    const outside = path.join(parent, "outside");
+    writePlatformFile(outside, { name: "evil", members: [{ name: "member" }] });
+    // plat/: the boundary; plat/link -> outside (a symlink INSIDE the boundary)
+    const plat = path.join(parent, "plat");
+    const member = path.join(plat, "member");
+    writePlatformFile(member, { platform: "evil", root: "../link" });
+    try {
+      fs.symlinkSync(outside, path.join(plat, "link"), "dir");
+    } catch {
+      t.skip("symlink creation unavailable on this platform");
+      return;
+    }
+    // Lexically plat/link is inside the boundary — physically it is not.
+    const ctx = resolvePlatformContext(member, plat);
+    assert.equal(ctx.root, null, "the aliased definition must not be honored");
+    assert.equal(ctx.diagnostics.length, 1);
+    const d = ctx.diagnostics[0];
+    assert.equal(d.code, "UNIT_PATH_ESCAPE");
+    assert.ok(d.message.includes("escapes resolution boundary"));
+    assert.ok(!d.message.includes(parent));
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("WR-02: an unresolvable (dangling) marker hint target is treated as an escape", () => {
+  const parent = mktree();
+  try {
+    const plat = path.join(parent, "plat");
+    const member = path.join(plat, "member");
+    writePlatformFile(member, { platform: "x", root: "../nonexistent" });
+    const ctx = resolvePlatformContext(member, plat);
+    assert.equal(ctx.root, null);
+    assert.equal(ctx.diagnostics.length, 1);
+    assert.equal(ctx.diagnostics[0].code, "UNIT_PATH_ESCAPE");
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("containment: the walk never ascends above the boundary dir", () => {
   const parent = mktree();
   try {

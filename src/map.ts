@@ -49,7 +49,7 @@ import { MalformedConfigError, RootNotFoundError } from "./errors.js";
 import { matchGlob } from "./internal/glob.js";
 import { resolveWithinRoot } from "./internal/path-guard.js";
 import {
-  isInsideBoundary,
+  isPhysicallyInsideBoundary,
   resolvePlatformContext,
   sniffPlatformFile,
 } from "./internal/platform-root.js";
@@ -534,9 +534,12 @@ export async function map(
           }
           // Relative to the platform root, or absolute — but never outside
           // the resolution boundary (D-06): an escape is diagnosed and the
-          // member treated as missing, never followed.
+          // member treated as missing, never followed. WR-02: the check is
+          // PHYSICAL (realpath both sides) — a symlink inside the boundary
+          // must not alias a directory outside it, and an unresolvable
+          // target is an escape.
           const target = path.resolve(effectiveRoot, value);
-          if (!isInsideBoundary(path.resolve(boundary), target)) {
+          if (!isPhysicallyInsideBoundary(path.resolve(boundary), target)) {
             extraDiagnostics.push(overrideEscapeDiagnostic(key));
             diskDirByName.set(key, null);
             continue;

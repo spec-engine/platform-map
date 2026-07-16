@@ -384,6 +384,63 @@ test("local override: unknown member -> dangling-override drift; boundary escape
   }
 });
 
+test("WR-02: a symlinked local-override target physically outside the boundary -> escape, never read", async (t) => {
+  const parent = mktree();
+  const outsideTree = mktree(); // a SIBLING tmpdir — physically outside `parent`
+  try {
+    const plat = path.join(parent, "plat");
+    gitDir(plat);
+    writeJson(path.join(plat, "platform-map.json"), {
+      name: "acme",
+      members: [{ name: "svc" }],
+    });
+    // the member's real content lives physically outside the boundary
+    const outsideSvc = path.join(outsideTree, "svc");
+    gitDir(outsideSvc);
+    writeJson(path.join(outsideSvc, "package.json"), {
+      name: "svc",
+      scripts: { start: "node ." },
+    });
+    // plat/link -> outsideSvc: lexically inside the boundary, physically not
+    try {
+      fs.symlinkSync(outsideSvc, path.join(plat, "link"), "dir");
+    } catch {
+      t.skip("symlink creation unavailable on this platform");
+      return;
+    }
+    writeJson(path.join(plat, "platform-map.local.json"), {
+      locations: { svc: "link" },
+    });
+
+    const pm = await map(plat, { boundary: parent });
+    const escapeDiag = pm.diagnostics.find(
+      (d) =>
+        d.code === "UNIT_PATH_ESCAPE" &&
+        d.message.includes("escapes resolution boundary"),
+    );
+    assert.ok(escapeDiag, "physical escape must be diagnosed");
+    const unit = pm.units.find((u) => u.name === "svc");
+    assert.ok(unit);
+    // never read: the outside package.json's signals must not appear
+    assert.equal(unit.signals.hasStartScript, undefined);
+    const missing = pm.diagnostics.find(
+      (d) =>
+        d.code === "PLATFORM_DRIFT" &&
+        d.message.startsWith("PLATFORM_DRIFT: listed member missing:"),
+    );
+    assert.ok(missing, "escaped override treats the member as missing");
+    assertNoAbsolutePaths(pm, parent);
+
+    assert.equal(
+      toJSON(await map(plat, { boundary: parent })),
+      toJSON(await map(plat, { boundary: parent })),
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+    fs.rmSync(outsideTree, { recursive: true, force: true });
+  }
+});
+
 test("listed-but-missing member -> unit still emitted (identity exists) + PLATFORM_DRIFT warning", async () => {
   const parent = mktree();
   try {

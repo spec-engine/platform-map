@@ -7,13 +7,19 @@
 // directories during the walk never throw; they degrade, IP-3).
 //
 // Security posture (D-06, T-iha-01): pure path math + bounded fs reads only —
-// no writes, no network, no subprocess. Never follows symlinked ancestry
-// beyond what path.resolve of the given dir yields (no realpath). All
+// no writes, no network, no subprocess. The upward WALK never follows
+// symlinked ancestry beyond what path.resolve of the given dir yields (no
+// realpath on the ascent). The one place resolution FOLLOWS a target — a
+// marker's root hint — is realpath'd first (WR-02): a symlink inside the
+// boundary must not alias a directory physically outside it, so the physical
+// location is what the boundary check sees (one bounded realpath per marker;
+// an unresolvable target is treated as an escape, never followed). All other
 // boundary comparisons use the path-guard idiom (path.resolve +
 // relative-prefix escape test). Diagnostic loci are paths relative to the
 // start dir (may contain ".."), never absolute (§5). No sorting anywhere —
 // serialize.ts stays the sole sort site.
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PlatformFileClassification } from "../config.js";
 import { classifyPlatformFile } from "../config.js";
@@ -46,6 +52,32 @@ export function isInsideBoundary(boundary: string, target: string): boolean {
     !relative.startsWith(`..${path.sep}`) &&
     !path.isAbsolute(relative)
   );
+}
+
+/** WR-02: the PHYSICAL location of a follow-target, or null when it cannot be
+ *  resolved (dangling symlink, denied component, nonexistent path) — callers
+ *  treat null as an escape (never followed). Bounded: one realpath call. */
+export function physicalPath(target: string): string | null {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return null;
+  }
+}
+
+/** WR-02: physical containment for follow-targets — realpaths BOTH sides so a
+ *  symlink inside the boundary cannot alias a physically-outside directory
+ *  (and so an aliased boundary, e.g. macOS /var -> /private/var, compares
+ *  correctly). An unresolvable target is an escape; an unresolvable boundary
+ *  falls back to its lexical form. */
+export function isPhysicallyInsideBoundary(
+  boundary: string,
+  target: string,
+): boolean {
+  const physicalTarget = physicalPath(target);
+  if (physicalTarget === null) return false;
+  const physicalBoundary = physicalPath(boundary) ?? boundary;
+  return isInsideBoundary(physicalBoundary, physicalTarget);
 }
 
 /** The resolver's result: the resolved platform root (null = no platform
@@ -158,7 +190,11 @@ export function resolvePlatformContext(
       const hint = sniff.marker.root ?? "..";
       const target = path.resolve(dir, hint);
       const locus = fileLocus(start, dir);
-      if (!isInsideBoundary(bound, target)) {
+      // WR-02: the hint target is about to be READ (followed) — containment
+      // must hold PHYSICALLY, not just lexically: realpath both sides so a
+      // symlink inside the boundary cannot alias an outside directory. An
+      // unresolvable target is an escape, never followed.
+      if (!isPhysicallyInsideBoundary(bound, target)) {
         diagnostics.push(hintEscapeDiagnostic(locus, hint));
         return { root: null, viaMarker: false, diagnostics };
       }
