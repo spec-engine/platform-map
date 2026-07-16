@@ -16,7 +16,6 @@ import {
   readLocalConfig,
   readPlatformFile,
 } from "../dist/config.mjs";
-import { MalformedConfigError } from "../dist/index.mjs";
 import {
   resolvePlatformContext,
   sniffPlatformFile,
@@ -24,6 +23,13 @@ import {
 
 function mktree() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-root-"));
+}
+
+// dist/config.mjs bundles its OWN copy of the MalformedConfigError class (the
+// internal test-build seam), so cross-bundle instanceof fails — the house
+// idiom (config.test.js) checks the error name instead.
+function isMalformedConfigError(err) {
+  return err instanceof Error && err.name === "MalformedConfigError";
 }
 
 function writeJson(dir, name, value) {
@@ -89,7 +95,10 @@ test("readPlatformFile: explicit marker root is preserved", () => {
 test("readPlatformFile: neither members nor platform -> unit-level config", () => {
   const root = mktree();
   try {
-    writePlatformFile(root, { name: "solo", units: [{ name: "u", path: "u" }] });
+    writePlatformFile(root, {
+      name: "solo",
+      units: [{ name: "u", path: "u" }],
+    });
     const r = readPlatformFile(root);
     assert.equal(r.kind, "config");
     assert.equal(r.config.name, "solo");
@@ -123,7 +132,7 @@ test("readPlatformFile: forbidden key combinations throw distinct reasons", () =
       writePlatformFile(root, value);
       assert.throws(
         () => readPlatformFile(root),
-        (e) => e instanceof MalformedConfigError && re.test(e.message),
+        (e) => isMalformedConfigError(e) && re.test(e.message),
       );
       try {
         readPlatformFile(root);
@@ -145,10 +154,16 @@ test("definition validation: missing/empty name, empty members, bad member field
   try {
     const cases = [
       [{ members: [{ name: "a" }] }, /"name" must be a non-empty string/],
-      [{ name: "", members: [{ name: "a" }] }, /"name" must be a non-empty string/],
+      [
+        { name: "", members: [{ name: "a" }] },
+        /"name" must be a non-empty string/,
+      ],
       [{ name: "p", members: [] }, /"members" must be a non-empty array/],
       [{ name: "p", members: "x" }, /"members" must be a non-empty array/],
-      [{ name: "p", members: [{ name: 42 }] }, /"members\[0\].name" must be a non-empty string/],
+      [
+        { name: "p", members: [{ name: 42 }] },
+        /"members\[0\].name" must be a non-empty string/,
+      ],
       [
         { name: "p", members: [{ name: "a", path: 7 }] },
         /"members\[0\].path" must be a non-empty string when present/,
@@ -158,7 +173,7 @@ test("definition validation: missing/empty name, empty members, bad member field
       writePlatformFile(root, value);
       assert.throws(
         () => readPlatformFile(root),
-        (e) => e instanceof MalformedConfigError && re.test(e.message),
+        (e) => isMalformedConfigError(e) && re.test(e.message),
       );
     }
   } finally {
@@ -174,7 +189,7 @@ test("marker validation: non-string/empty platform rejected", () => {
       assert.throws(
         () => readPlatformFile(root),
         (e) =>
-          e instanceof MalformedConfigError &&
+          isMalformedConfigError(e) &&
           /"platform" must be a non-empty string/.test(e.message),
       );
     }
@@ -189,7 +204,10 @@ test("readCanonicalConfig: unit-level config behavior unchanged; definition conv
   const root = mktree();
   try {
     writePlatformFile(root, { name: "solo", ignore: ["a"] });
-    assert.deepEqual(readCanonicalConfig(root), { name: "solo", ignore: ["a"] });
+    assert.deepEqual(readCanonicalConfig(root), {
+      name: "solo",
+      ignore: ["a"],
+    });
 
     writePlatformFile(root, {
       name: "plat",

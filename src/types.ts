@@ -105,7 +105,8 @@ export interface Diagnostic {
     | "UNMATCHED_PATTERN" // workspace/ignore glob matched nothing (zero-dep glob honesty)
     | "CYCLE_SUSPECTED" // edges contain a cycle (reported, not thrown — mapping still succeeds)
     | "UNIT_PATH_ESCAPE" // resolved unit path escapes platform root
-    | "CENSUS_TRUNCATED"; // depth/entry-cap hit during file census (additive, D-10)
+    | "CENSUS_TRUNCATED" // depth/entry-cap hit during file census (additive, D-10)
+    | "PLATFORM_DRIFT"; // definition/marker/local-override disagreement (additive, RED-97 — CENSUS_TRUNCATED precedent)
   severity: "info" | "warning" | "error";
   path?: string; // platform-relative locus
   message: string; // human-readable, stable prefix per code
@@ -163,6 +164,43 @@ export type AdapterName =
   | "workspace"
   | "siblings";
 
+// ── Platform-root convention (RED-97, PMAP-010/011/012) ───────────────────
+/** The checked-in canonical platform definition (D-02): the `members`-keyed
+ *  shape of `platform-map.json` at a platform root. Identity only — the
+ *  platform name plus the member list (name + conventional relative path);
+ *  machine paths never appear here (per-user disk locations live in
+ *  `platform-map.local.json`, see PlatformLocalConfig). */
+export interface PlatformDefinition {
+  /** The platform name (required, non-empty). Becomes PlatformMap.name
+   *  regardless of which directory map() was invoked from. */
+  name: string;
+  /** Explicit membership (D-04): each member's `name` is required; `path` is
+   *  the conventional relative path from the platform root and defaults to
+   *  `name` (the child-dir convention). */
+  members: Array<{ name: string; path?: string }>;
+  /** Additional ignore globs, threaded into the platform root's child scan. */
+  ignore?: string[];
+}
+
+/** The committed per-member marker (D-03): the `platform`-keyed shape of
+ *  `platform-map.json` inside a member repo. Identity + root hint only — no
+ *  sibling lists, no machine paths. */
+export interface MemberMarker {
+  /** The platform this member belongs to (required, non-empty). */
+  platform: string;
+  /** Relative hint from the member to its platform root. Default "..". */
+  root?: string;
+}
+
+/** The per-user, never-committed `platform-map.local.json` at a platform root
+ *  (D-02): disk-location overrides only. Values are paths (relative to the
+ *  platform root, or absolute) naming where a member actually lives on THIS
+ *  machine. Read only when a definition is present at the resolved root;
+ *  never reflected in map output (unit paths stay conventional, IP-6). */
+export interface PlatformLocalConfig {
+  locations?: Record<string, string>;
+}
+
 /** Shape of an optional, authoritative `platform-map.json` canonical config
  *  (DESIGN.md §3). Every field is optional — config is optional forever (D8).
  *  Unknown top-level keys are ignored (forward-compat); known-key shapes are
@@ -188,4 +226,9 @@ export interface MapOptions extends DetectOptions {
   adapters?: Partial<Record<AdapterName, boolean>>;
   /** Units injected by the caller; ranked below canonical, above dark-factory. */
   units?: Array<{ name: string; path: string; ref?: string }>;
+  /** The directory above which upward platform resolution never ascends and
+   *  outside which marker root-hint / local-override resolution is never
+   *  followed (D-06 containment). Default: os.homedir(). An escaping
+   *  resolution becomes a diagnostic, never a followed path. */
+  boundary?: string;
 }

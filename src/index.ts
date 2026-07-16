@@ -14,6 +14,9 @@ export { graph } from "./graph.js";
 export { serialize, toJSON } from "./internal/serialize.js";
 export { map } from "./map.js";
 export { deriveRole } from "./role.js";
+// RED-97: PlatformDefinition/MemberMarker/PlatformLocalConfig are public types
+// (these types ARE the API); resolvePlatformContext stays internal — consumers
+// get the behavior via map(), tests reach dist/internal/ like serialize does.
 export type {
   AdapterName,
   Detection,
@@ -21,8 +24,11 @@ export type {
   Diagnostic,
   Edge,
   MapOptions,
+  MemberMarker,
   Mode,
+  PlatformDefinition,
   PlatformGraph,
+  PlatformLocalConfig,
   PlatformMap,
   PlatformMapConfig,
   Role,
