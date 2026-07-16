@@ -168,6 +168,11 @@ test("definition validation: missing/empty name, empty members, bad member field
         { name: "p", members: [{ name: "a", path: 7 }] },
         /"members\[0\].path" must be a non-empty string when present/,
       ],
+      // WR-06: duplicate member names are an authoring error
+      [
+        { name: "p", members: [{ name: "a" }, { name: "a", path: "b" }] },
+        /"members\[1\].name" duplicates member "a"/,
+      ],
     ];
     for (const [value, re] of cases) {
       writePlatformFile(root, value);

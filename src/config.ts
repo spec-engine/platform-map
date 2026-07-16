@@ -226,6 +226,7 @@ function validateDefinition(
     return { reason: `"members" must be a non-empty array` };
   }
   const members: Array<{ name: string; path?: string }> = [];
+  const seenNames = new Set<string>();
   for (let i = 0; i < raw.members.length; i++) {
     const m: unknown = raw.members[i];
     if (!isPlainObject(m))
@@ -233,6 +234,15 @@ function validateDefinition(
     if (typeof m.name !== "string" || m.name.length === 0) {
       return { reason: `"members[${i}].name" must be a non-empty string` };
     }
+    // WR-06: a definition is an identity list — everything downstream keys by
+    // name (merge's byName, diskDirByName, drift checks), so a duplicate
+    // identity is a config authoring error, rejected like any shape violation.
+    if (seenNames.has(m.name)) {
+      return {
+        reason: `"members[${i}].name" duplicates member "${m.name}"`,
+      };
+    }
+    seenNames.add(m.name);
     if (m.path !== undefined) {
       if (typeof m.path !== "string" || m.path.length === 0) {
         return {
@@ -458,7 +468,9 @@ export function readLocalConfig(root: string): ReadLocalConfigResult | null {
     return {
       ok: false,
       // Code only — never the fs error message (absolute-path leak, WR-01).
-      diagnostic: localConfigDiagnostic(`could not be read (${fsErrorCode(e)})`),
+      diagnostic: localConfigDiagnostic(
+        `could not be read (${fsErrorCode(e)})`,
+      ),
     };
   }
 
