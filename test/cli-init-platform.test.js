@@ -53,8 +53,20 @@ function rmrf(dir) {
 
 test("buildPlatformInit: definition first, one marker per member, member path omitted when equal to name", () => {
   const children = [
-    { name: "svc-a", path: "svc-a", ref: null, hasDfPointer: false, conflict: null },
-    { name: "web", path: "apps/web", ref: null, hasDfPointer: false, conflict: null },
+    {
+      name: "svc-a",
+      path: "svc-a",
+      ref: null,
+      hasDfPointer: false,
+      conflict: null,
+    },
+    {
+      name: "web",
+      path: "apps/web",
+      ref: null,
+      hasDfPointer: false,
+      conflict: null,
+    },
   ];
   const plan = buildPlatformInit("myplat", children);
   assert.equal(plan.length, 3, "definition + one marker per member");
@@ -282,7 +294,11 @@ test("init --yes at a dir with a workspace manifest: today's { name } proposal, 
     const written = JSON.parse(
       fs.readFileSync(path.join(root, "platform-map.json"), "utf8"),
     );
-    assert.deepEqual(written, { name: "myplat" }, "monorepo proposal unchanged");
+    assert.deepEqual(
+      written,
+      { name: "myplat" },
+      "monorepo proposal unchanged",
+    );
     assert.equal(
       fs.existsSync(path.join(root, "svc-a", "platform-map.json")),
       false,

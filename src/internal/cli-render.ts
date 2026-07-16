@@ -15,6 +15,8 @@ import { graph } from "../graph.js";
 import type {
   Detection,
   Edge,
+  MemberMarker,
+  PlatformDefinition,
   PlatformMap,
   PlatformMapConfig,
   Unit,
@@ -228,6 +230,46 @@ export function buildProposal(
     return { name, units };
   }
   return { name };
+}
+
+/** One file in the platform-init write plan (D-07): a root-relative POSIX
+ *  path plus its JSON content (object form — the dispatcher stringifies and
+ *  owns the write). */
+export interface PlatformInitFile {
+  path: string;
+  content: PlatformDefinition | MemberMarker;
+}
+
+/**
+ * The platform-bootstrap init plan (D-07/RED-97). PURE — zero I/O; the actual
+ * per-file existence gates and writes live in bin/platform-map.ts (SEC-05).
+ * Takes the platform name and the child-repo sibling list (from detect() with
+ * scanRoot ".") and returns the ordered file plan: FIRST the checked-in
+ * definition (name + members, member `path` omitted when it equals the name —
+ * the IP-1 child-dir convention), THEN one committed marker per member with
+ * `platform` + an explicit root ".." (D-03: identity + root hint only — no
+ * sibling lists, no machine paths). Deterministic ordering: members arrive
+ * sorted by name from scanSiblings (sort-at-construction) — this function
+ * relies on that and deliberately does not re-sort (serialize.ts stays the
+ * library's sole sort site; scanSiblings is the scan-side precedent).
+ */
+export function buildPlatformInit(
+  name: string,
+  children: NonNullable<Detection["siblings"]>,
+): PlatformInitFile[] {
+  const members: PlatformDefinition["members"] = children.map((c) =>
+    c.path === c.name ? { name: c.name } : { name: c.name, path: c.path },
+  );
+  const plan: PlatformInitFile[] = [
+    { path: "platform-map.json", content: { name, members } },
+  ];
+  for (const c of children) {
+    plan.push({
+      path: `${c.path}/platform-map.json`,
+      content: { platform: name, root: ".." },
+    });
+  }
+  return plan;
 }
 
 /**

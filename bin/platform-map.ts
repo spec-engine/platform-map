@@ -19,6 +19,7 @@ import {
   toJSON,
 } from "../src/index.js";
 import {
+  buildPlatformInit,
   buildProposal,
   exitFor,
   graphProjection,
@@ -29,7 +30,7 @@ import {
   toDot,
   usage,
 } from "../src/internal/cli-render.js";
-import type { PlatformMap } from "../src/types.js";
+import type { Detection, PlatformMap } from "../src/types.js";
 
 // Build-time-injected version constant (tsdown `define`); declared so
 // `tsc --noEmit` type-checks without a runtime package.json read (D-04).
@@ -42,11 +43,90 @@ function writeDiagnostics(pm: PlatformMap): void {
   }
 }
 
+// Shared confirm gate for init writes (D-07): with `--yes` the write is
+// pre-confirmed; a non-TTY stdin without `--yes` refuses (exit 1 — never hang
+// a CI job on stdin); a typed `N` declines cleanly (exit 0). Returns null when
+// the write is confirmed, else the exit code. The readline prompt and every
+// refuse/decline line go to STDERR so stdout stays the proposal/plan.
+async function confirmWrite(
+  yes: boolean,
+  prompt: string,
+): Promise<number | null> {
+  if (yes) return null;
+  if (!process.stdin.isTTY) {
+    process.stderr.write(
+      "platform-map: non-interactive; pass --yes to write\n",
+    );
+    return 1;
+  }
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stderr, // prompt → stderr; stdout stays the proposal
+  });
+  const answer = await rl.question(prompt);
+  rl.close();
+  if (!parseYesNo(answer)) {
+    process.stderr.write("platform-map: aborted\n");
+    return 0; // typed N is a clean decline, not an error
+  }
+  return null;
+}
+
+// init platform-bootstrap branch (D-07/RED-97): a manifest-less dir whose
+// CHILDREN include .git repos gets the rung-3 proposal — a checked-in
+// definition at the root plus one committed marker per member. The root
+// refuse-if-exists gate already passed in runInit (root file present refuses
+// the WHOLE init); here the per-member gate applies: a member whose
+// platform-map.json already exists is excluded from the plan with a stderr
+// note and never overwritten — the remaining files are still written. The
+// plan prints to STDOUT as one JSON object keyed by root-relative file path;
+// the confirmation listing (every path) goes to STDERR. Every write target is
+// the FIXED basename platform-map.json under the root or a DETECTED .git
+// child dir — the user controls directories, never filenames
+// (SEC-05 / V12 / T-04-08 preserved). platform-map.local.json is NEVER
+// written and .gitignore is never touched (D-02: the local file is per-user;
+// docs cover gitignoring it).
+async function runPlatformInit(
+  dir: string,
+  yes: boolean,
+  detection: Detection,
+): Promise<number> {
+  const name = path.basename(path.resolve(dir));
+  const plan = buildPlatformInit(name, detection.siblings ?? []).filter((f) => {
+    if (f.path === "platform-map.json") return true; // gated whole-init in runInit
+    if (fs.existsSync(path.join(dir, ...f.path.split("/")))) {
+      process.stderr.write(`platform-map: ${f.path} exists; skipping\n`);
+      return false;
+    }
+    return true;
+  });
+  const planObject: Record<string, unknown> = {};
+  for (const f of plan) planObject[f.path] = f.content;
+  process.stdout.write(`${JSON.stringify(planObject, null, 2)}\n`);
+  process.stderr.write(
+    `platform-map: will write ${plan.length} file${plan.length === 1 ? "" : "s"}:\n`,
+  );
+  for (const f of plan) process.stderr.write(`  ${f.path}\n`);
+  const gate = await confirmWrite(
+    yes,
+    `Write ${plan.length} file${plan.length === 1 ? "" : "s"}? [y/N] `,
+  );
+  if (gate !== null) return gate;
+  for (const f of plan) {
+    fs.writeFileSync(
+      path.join(dir, ...f.path.split("/")),
+      `${JSON.stringify(f.content, null, 2)}\n`,
+    );
+    process.stderr.write(`platform-map: wrote ${f.path}\n`);
+  }
+  return 0;
+}
+
 // init — the ONE and ONLY write path in the entire package (SEC-05). Gated three
-// ways before the single write: refuse-if-exists (never clobber an authored file),
-// non-TTY-without-`--yes` (never hang a CI job on stdin), and a typed `N` (clean
-// decline, exit 0). The proposal prints to STDOUT (machine-consumable); the readline
-// prompt and every status/refuse line go to STDERR so stdout stays clean. The write
+// ways before any write: refuse-if-exists (never clobber an authored file),
+// non-TTY-without-`--yes`, and a typed `N` (both via confirmWrite). The proposal
+// prints to STDOUT (machine-consumable); the readline prompt and every
+// status/refuse line go to STDERR so stdout stays clean. The write
 // target is the FIXED basename path.join(dir, "platform-map.json") — the user
 // controls the directory, never the filename (SEC-05 / V12 / T-04-08).
 async function runInit(dir: string, yes: boolean): Promise<number> {
@@ -59,31 +139,26 @@ async function runInit(dir: string, yes: boolean): Promise<number> {
   }
   // detect() may throw RootNotFoundError → caught by main()'s try/catch → exit 1.
   const detection = detect(dir);
+  if (detection.mode !== "monorepo") {
+    // D-07/RED-97: no workspace manifest — probe the dir's own CHILDREN for
+    // .git repos (scanRoot "."). Multi-repo here means "this dir is a
+    // platform root": bootstrap the rung-3 definition + member markers. A
+    // childless dir falls through to today's parent-sibling/{ name } flow —
+    // the manifest branch above stays byte-for-byte unchanged.
+    const children = detect(dir, { scanRoot: "." });
+    if (children.mode === "multi-repo") {
+      return runPlatformInit(dir, yes, children);
+    }
+  }
   const text = JSON.stringify(
     buildProposal(detection, path.basename(path.resolve(dir))),
     null,
     2,
   );
   process.stdout.write(`${text}\n`);
-  if (!yes) {
-    if (!process.stdin.isTTY) {
-      process.stderr.write(
-        "platform-map: non-interactive; pass --yes to write\n",
-      );
-      return 1;
-    }
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stderr, // prompt → stderr; stdout stays the proposal
-    });
-    const answer = await rl.question("Write platform-map.json? [y/N] ");
-    rl.close();
-    if (!parseYesNo(answer)) {
-      process.stderr.write("platform-map: aborted\n");
-      return 0; // typed N is a clean decline, not an error
-    }
-  }
-  fs.writeFileSync(configPath, `${text}\n`); // THE ONE WRITE (SEC-05)
+  const gate = await confirmWrite(yes, "Write platform-map.json? [y/N] ");
+  if (gate !== null) return gate;
+  fs.writeFileSync(configPath, `${text}\n`); // the rung-1/2 single write (SEC-05)
   process.stderr.write("platform-map: wrote platform-map.json\n");
   return 0;
 }
