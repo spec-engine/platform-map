@@ -39,7 +39,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=4",
     "test:bun": "bun test test-bun/",
     "smoke:cold-install": "npm run build && node scripts/cold-install-smoke.mjs",
     "typecheck": "tsc --noEmit",
