@@ -14,6 +14,8 @@ can make changes platform-wide instead of managing tickets and changes per
 repo only. Dark Factory, Spec Engine, and Clarity Audit are its
 first consumers, building on the same shared map.
 
+The architecture's pillars — and which promises are verified vs. tracked gaps — live in [PRINCIPLES.md](./PRINCIPLES.md).
+
 > **Status:** Phase 1 (foundation scaffold). The public type contract and the
 > deterministic serializer are in place; `detect()`, the adapters, `map()`,
 > `graph()`, `deriveRole()`, and the CLI land in later phases. See the
