@@ -337,3 +337,38 @@ test("init --yes at a childless repo with parent .git siblings: today's { name, 
     rmrf(tmpParent);
   }
 });
+
+// ── WR-05: symlinked member child dirs are never written through ────────────
+
+test("init --yes skips a symlinked member child with a note (never writes through the link)", (t) => {
+  const { tmpParent, root } = seedPlatform(["svc-a"]);
+  try {
+    // an outside repo, symlinked in as a child of the platform root
+    const outside = path.join(tmpParent, "outside-repo");
+    fs.mkdirSync(path.join(outside, ".git"), { recursive: true });
+    try {
+      fs.symlinkSync(outside, path.join(root, "linked"), "dir");
+    } catch {
+      t.skip("symlink creation unavailable on this platform");
+      return;
+    }
+    const r = run(["init", "--yes", root]);
+    assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+    assert.ok(
+      r.stderr.includes("linked is a symlink; skipping"),
+      `expected a skip note, stderr: ${r.stderr}`,
+    );
+    // the real member's marker was written; nothing went through the link
+    assert.ok(
+      fs.existsSync(path.join(root, "svc-a", "platform-map.json")),
+      "real member marker written",
+    );
+    assert.equal(
+      fs.existsSync(path.join(outside, "platform-map.json")),
+      false,
+      "no physical write outside the targeted tree",
+    );
+  } finally {
+    rmrf(tmpParent);
+  }
+});

@@ -100,7 +100,23 @@ async function runPlatformInit(
   const name = path.basename(path.resolve(dir));
   const plan = buildPlatformInit(name, detection.siblings ?? []).filter((f) => {
     if (f.path === "platform-map.json") return true; // gated whole-init in runInit
-    if (fs.existsSync(path.join(dir, ...f.path.split("/")))) {
+    // WR-05: never write THROUGH a symlinked member dir — the marker would
+    // land physically outside the tree the user targeted. lstat (no follow)
+    // the immediate parent of the write target; a symlink is skipped with a
+    // note. Scoped to the writer only — scan candidacy is unchanged.
+    const segments = f.path.split("/");
+    const memberDir = path.join(dir, ...segments.slice(0, -1));
+    try {
+      if (fs.lstatSync(memberDir).isSymbolicLink()) {
+        process.stderr.write(
+          `platform-map: ${segments.slice(0, -1).join("/")} is a symlink; skipping\n`,
+        );
+        return false;
+      }
+    } catch {
+      // missing dir: leave it to the write to fail loudly
+    }
+    if (fs.existsSync(path.join(dir, ...segments))) {
       process.stderr.write(`platform-map: ${f.path} exists; skipping\n`);
       return false;
     }
