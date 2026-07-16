@@ -16,10 +16,11 @@ first consumers, building on the same shared map.
 
 The architecture's pillars — and which promises are verified vs. tracked gaps — live in [PRINCIPLES.md](./PRINCIPLES.md).
 
-> **Status:** Phase 1 (foundation scaffold). The public type contract and the
-> deterministic serializer are in place; `detect()`, the adapters, `map()`,
-> `graph()`, `deriveRole()`, and the CLI land in later phases. See the
-> project's `PLAN.md`/`ROADMAP.md` for the full build order.
+> **Status:** feature-complete for v1 — `detect()`, `map()`, `graph()`,
+> `deriveRole()`, the adapters, the deterministic serializer, the CLI, and
+> the platform-root convention (run-anywhere resolution) are all in place
+> and verified. See [REQUIREMENTS.md](./REQUIREMENTS.md) for the
+> requirement-by-requirement evidence.
 
 ## Install
 
@@ -61,6 +62,135 @@ Every diagnostic carries a `code`, a `severity` (`info` | `warning` |
 | `CYCLE_SUSPECTED` | The edge graph contains a cycle; mapping still succeeds. |
 | `UNIT_PATH_ESCAPE` | A resolved unit path would escape the platform root; the unit is dropped. |
 | `CENSUS_TRUNCATED` | A depth or entry-count cap was hit during file census (additive code, not in the original design doc — added so bounded scans never truncate silently). |
+| `PLATFORM_DRIFT` | A platform file disagrees with reality (additive code, RED-97): marker platform-name or root-hint mismatch, dangling marker, listed-but-missing member, dangling local override (all warnings), or a non-repo child dir at a platform root (info). Stable message prefix per sub-case. |
+
+## Platform-root convention
+
+Platform knowledge lives in files on disk, not in heads. Adoption is
+progressive — three rungs, opt-in at every step:
+
+1. **Single repo** — an in-repo `platform-map.json` (or nothing at all;
+   detection works zero-config). Unchanged.
+2. **Monorepo** — same file, same repo; workspace manifests supply the
+   members. Unchanged.
+3. **Multi-repo platform** — a small git repo (the *platform root*) holds the
+   checked-in **canonical definition**; the member repos are its child
+   directories (untracked by the platform repo's git). Running `platform-map`
+   anywhere in the platform — the root, a member root, or any nested member
+   subdir — yields the **same map, byte-identical**.
+
+### The three file shapes
+
+One filename, `platform-map.json`, three shapes discriminated by key
+presence (checked in this order — `members` wins, then `platform`, else
+today's unit-level config):
+
+**Platform definition** — committed at the platform root. Identity only: the
+platform name plus the member list. A member's `path` defaults to its `name`
+(the child-dir convention) — omit it unless the member lives in a
+subdirectory:
+
+```json
+{
+  "name": "acme",
+  "members": [
+    { "name": "svc-api" },
+    { "name": "svc-worker" },
+    { "name": "webapp" }
+  ],
+  "ignore": ["scratch", "archive-*"]
+}
+```
+
+(`platform`, `root`, `units`, and `overrides` are rejected alongside
+`members` — a definition is identity, not configuration.)
+
+**Member marker** — committed inside each member. Identity + root hint only,
+no sibling lists, no machine paths:
+
+```json
+{
+  "platform": "acme",
+  "root": ".."
+}
+```
+
+`root` defaults to `".."` and may be omitted. A member with a marker still
+maps standalone as a plain repo when its platform root is missing — the
+marker adds context, never a hard dependency.
+
+**Unit-level config** — everything that worked before (rungs 1–2) keeps
+working, byte-for-byte. A repo whose `platform-map.json` has neither
+`members` nor `platform` self-describes exactly as today, and the upward
+platform resolution deliberately stops at such a repo (the back-compat
+firewall).
+
+### Per-user disk locations: `platform-map.local.json`
+
+The committed definition carries identity; **where members live on your
+machine is per-user**. By default a member is expected at its conventional
+child directory under the platform root. When your checkout lives elsewhere,
+add `platform-map.local.json` next to the definition:
+
+```json
+{
+  "locations": {
+    "svc-worker": "../checkouts/svc-worker"
+  }
+}
+```
+
+Values are relative to the platform root (or absolute). **Add
+`platform-map.local.json` to the platform repo's `.gitignore`** — it is
+per-user machine state and must never be committed. An override changes only
+where the member is *read* from disk: the unit's `path` in output stays the
+conventional relative path, output is byte-identical with and without an
+equivalent override, and machine paths never appear in output. A malformed
+local file degrades to a `MALFORMED_CONFIG` warning — it can never brick the
+map.
+
+### Run-anywhere resolution and the boundary
+
+`map()` resolves the platform root before detection: from the given
+directory it walks upward, following a member marker's root hint or stopping
+at a directory that holds a definition. The walk is bounded — it never
+ascends above `MapOptions.boundary` (default `os.homedir()`), and marker
+hints or local overrides that resolve outside the boundary become
+diagnostics (`UNIT_PATH_ESCAPE`, "escapes resolution boundary") and are
+never followed. A mapped root outside the boundary makes resolution inert —
+plain rung-1/2 behavior.
+
+At rung 3, member units always carry `sources: ["canonical"]` — a listed
+member is a canonically declared identity regardless of physical presence or
+local relocation. A listed member missing from disk is still emitted (with
+empty signals) plus a `PLATFORM_DRIFT` warning; an unlisted `.git` child of
+the platform root surfaces as `UNCONFIGURED_SIBLING`; membership is always
+explicit, never guessed.
+
+### Bootstrapping with `init`
+
+`platform-map init` at a manifest-less directory whose children include git
+repos proposes the full platform bootstrap:
+
+```bash
+$ platform-map init .          # or: init --yes to skip the prompt
+{
+  "platform-map.json": { "name": "acme", "members": [ ... ] },
+  "svc-api/platform-map.json": { "platform": "acme", "root": ".." },
+  "webapp/platform-map.json": { "platform": "acme", "root": ".." }
+}
+platform-map: will write 3 files:
+  platform-map.json
+  svc-api/platform-map.json
+  webapp/platform-map.json
+Write 3 files? [y/N]
+```
+
+The plan (stdout) is one JSON object keyed by root-relative file path; the
+listing and prompt go to stderr. `init` never overwrites: if the root
+`platform-map.json` exists the whole init refuses; if a member's file exists
+that one file is skipped with a note and the rest are still written. It
+never writes `platform-map.local.json` and never touches `.gitignore`.
 
 ## Detection flavor precedence
 

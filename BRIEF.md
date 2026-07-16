@@ -118,21 +118,36 @@ Naming follows SE's convention: a nested unit's name is its platform-relative pa
 
 ### Canonical config (`platform-map.json`)
 
-Minimal by design — most fields are detectable, so the config only pins what detection can't know or gets wrong:
+Minimal by design — most fields are detectable, so the config only pins what
+detection can't know or gets wrong. One filename, three shapes discriminated
+by key presence (RED-97). For a single repo or monorepo (rungs 1–2), the
+in-repo unit-level config is unchanged — `{ "name": "svc-api" }` is a
+complete valid file.
+
+For a **multi-repo platform**, the canonical config is the **platform-root
+convention**: a small platform repo whose committed `platform-map.json` is
+the membership definition, with the member repos as its child directories:
 
 ```jsonc
+// <platform-root>/platform-map.json — committed; identity only
 {
   "name": "acme",
-  "units": [
-    { "name": "svc-api", "path": "../svc-api" },
-    { "name": "svc-worker", "path": "../svc-worker", "ref": "develop" }
+  "members": [
+    { "name": "svc-api" },        // "path" defaults to the name (child dir)
+    { "name": "svc-worker" },
+    { "name": "webapp" }
   ],
-  "ignore": ["../scratch", "../archive-*"],
-  "overrides": {
-    "svc-api/apps/admin": { "role": "app" }   // when signal-derivation is wrong
-  }
+  "ignore": ["scratch", "archive-*"]
 }
 ```
+
+Each member commits a tiny marker (`{ "platform": "acme", "root": ".." }` in
+its own `platform-map.json`) so any clone knows where it belongs, and
+per-user disk locations go in an **uncommitted** `platform-map.local.json`
+at the platform root (gitignore it). Paths in committed files never point
+outside their own tree and machine paths never appear anywhere — see the
+README's "Platform-root convention" section and DESIGN.md §3 for the full
+shapes and resolution semantics.
 
 ### Adapters (read-only, keep working forever — D8)
 

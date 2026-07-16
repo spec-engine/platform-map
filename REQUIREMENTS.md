@@ -42,7 +42,7 @@ self-edge dropped, per-sibling-set index scoping), `test/map.test.js` e2e over
 
 ### PMAP-004 — Honesty
 Ambiguous or unrecognizable structures produce diagnostics, never silent
-guesses or omissions. All seven diagnostic codes are exercised.
+guesses or omissions. All eight diagnostic codes are exercised.
 **Status: verified.**
 Evidence per code — UNCONFIGURED_SIBLING: `merge/map/parity` tests;
 CONFIG_CONFLICT: `merge/map/serialize`; MALFORMED_CONFIG:
@@ -50,7 +50,9 @@ CONFIG_CONFLICT: `merge/map/serialize`; MALFORMED_CONFIG:
 UNMATCHED_PATTERN: `glob/workspace/map/adversarial-e2e`; CYCLE_SUSPECTED:
 `map-graph/scc`; UNIT_PATH_ESCAPE: `path-guard/map/dark-factory/spec-engine/
 canonical/workspace/detect/adversarial-e2e/serialize`; CENSUS_TRUNCATED:
-`walk/workspace/serialize`.
+`walk/workspace/serialize`; PLATFORM_DRIFT (additive, RED-97 — all six
+sub-cases with stable message prefixes): `platform-convention`,
+`platform-root`.
 
 ### PMAP-005 — Safety
 No network. No filesystem writes except CLI `init`. Path-traversal guarded.
@@ -113,19 +115,55 @@ turbo(+edges) — `test/map.test.js`, `test/detect.test.js`,
 sibling promoted together in one map).
 
 ### PMAP-010 — Execution anywhere
-**Status: unimplemented — RED-97.** Running at the platform root or from
-inside any member yields the same map (modulo root anchor). Today only the
-one-level sibling scan exists.
+Running at the platform root or from inside any member yields the same map.
+**Status: verified with notes.**
+Evidence: `test/platform-convention.test.js` — the equivalence matrix
+("PMAP-010 equivalence: map() from member roots and nested subdirs is
+byte-identical to map() at the platform root", covering a single-repo member,
+a monorepo member, and a nested member subdir; byte-identical INCLUDING
+`pm.root`, which re-anchors to the resolved platform root), plus byte-equal
+drift emission from at-root and from-inside runs ("wrong platform name →
+PLATFORM_DRIFT warning from BOTH at-root and from-inside runs") and the
+rung-1/2 firewall case (a self-described repo inside a platform maps
+standalone, byte-identical to before). Note: equivalence is stronger than
+"modulo root anchor" — assembly-time drift checks make the runs byte-exact.
 
 ### PMAP-011 — Platform definition file
-**Status: unimplemented — RED-97.** Canonical checked-in membership at the
-platform root (progressive disclosure: in-repo → monorepo → platform repo);
-per-user local config for disk locations, defaulting to the
-members-as-child-dirs convention.
+Canonical checked-in membership at the platform root (progressive disclosure:
+in-repo → monorepo → platform repo); per-user local config for disk
+locations, defaulting to the members-as-child-dirs convention.
+**Status: verified with notes.**
+Evidence: `test/platform-root.test.js` (discrimination matrix
+members/platform/config, forbidden key combinations, definition and marker
+validators, local-config leniency + prototype-pollution key skipping);
+`test/platform-convention.test.js` ("rung 3 at root: definition yields member
+units for mixed shapes" — single-repo + pnpm-monorepo members with an
+internal edge, `UNCONFIGURED_SIBLING` for an unlisted `.git` child,
+`PLATFORM_DRIFT` info for a non-repo child; "local override: relocated member
+is read from the override; output stays conventional and byte-identical";
+listed-but-missing member still emitted; malformed local file degrades to a
+warning); `test/cli-init-platform.test.js` (init bootstraps definition +
+markers, confirm-gated, per-file refuse, and the map() round-trip). At rung 3
+member units always carry `sources: ["canonical"]` — membership is declared
+identity, not scan-derived. Note: rung-3 members do not carry sibling-scan
+signals (`hasDfPointer`) — by design, since a member's identity must not vary
+with physical presence.
 
 ### PMAP-012 — Member self-awareness
-**Status: unimplemented — RED-97.** A committed per-member marker (platform
-name + root hint) lets any member resolve its platform without heuristics.
+A committed per-member marker (platform name + root hint) lets any member
+resolve its platform without heuristics.
+**Status: verified with notes.**
+Evidence: `test/platform-root.test.js` (marker-at-start resolution, nested
+subdir resolution, dangling-marker fallback, and the containment cases —
+start outside the boundary is inert, an escaping root hint yields
+`UNIT_PATH_ESCAPE` "escapes resolution boundary" and is never followed, the
+walk never ascends above the boundary); `test/platform-convention.test.js`
+(marker name-mismatch and root-hint-mismatch drift, dangling-marker
+rung-1/2 fallback). Notes on honest limits: the boundary is exercised through
+`MapOptions.boundary` (the tested seam — the default is `os.homedir()`, which
+cannot contain tmpdir fixtures); CLI-level coverage sets env `HOME` on the
+spawned process (`os.homedir()` honors it on POSIX), so the default-boundary
+path itself is exercised only via that env seam.
 
 ### PMAP-013 — Cross-repo edges
 **Status: unimplemented — RED-98.** Dependency edges across repo boundaries
@@ -146,7 +184,9 @@ RED-98 must consciously change it.
 | PMAP-007 | verified | cold-install smoke, attw/publint, test-bun | — |
 | PMAP-008 | verified* | cli, cli-render | exit 2 unreachable black-box |
 | PMAP-009 | verified | mixed-topology, map, parity, detect | — |
-| PMAP-010..012 | unimplemented | — | RED-97 |
+| PMAP-010 | verified* | platform-convention (equivalence matrix, firewall) | byte-exact incl. root; see catalog |
+| PMAP-011 | verified* | platform-root, platform-convention, cli-init-platform | rung-3 members carry no scan signals |
+| PMAP-012 | verified* | platform-root (walk + containment), platform-convention (drift) | boundary tested via MapOptions.boundary / HOME env |
 | PMAP-013 | unimplemented | mixed-topology pins current suppression | RED-98 |
 
 `verified*` = verified with notes (see catalog entry).

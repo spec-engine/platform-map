@@ -91,7 +91,9 @@ export interface Diagnostic {
     | "MALFORMED_CONFIG"          // JSON/shape error in a source file (file + reason)
     | "UNMATCHED_PATTERN"         // workspace/ignore glob matched nothing (zero-dep glob honesty, PLAN risk 4)
     | "CYCLE_SUSPECTED"           // edges contain a cycle (reported, not thrown — mapping still succeeds)
-    | "UNIT_PATH_ESCAPE";         // resolved unit path escapes platform root (DF T-04.01-01 guard)
+    | "UNIT_PATH_ESCAPE"          // resolved unit path escapes platform root (DF T-04.01-01 guard)
+    | "CENSUS_TRUNCATED"          // additive (post-draft): a depth/entry cap was hit during file census
+    | "PLATFORM_DRIFT";           // additive (RED-97): platform files disagree with reality (see §3)
   severity: "info" | "warning" | "error";
   path?: string;                  // platform-relative locus
   message: string;                // human-readable, stable prefix per code
@@ -128,6 +130,95 @@ export interface PlatformMapConfig {
 ```
 
 Validation is hand-rolled (zero deps), with SE's three-layer error style: read, parse, and validate failures each throw a distinct, location-tagged message (`platform-map.json at <path> failed validation: <reason>`). A malformed canonical config is a hard error; malformed *adapter* sources degrade to `MALFORMED_CONFIG` diagnostics (the canonical file is authored intent; adapter files belong to other tools and must not brick the map).
+
+### 3.1 The three discriminated `platform-map.json` shapes (RED-97)
+
+One filename, three deterministically distinguishable shapes, discriminated by
+key presence — checked in this order:
+
+| # | Discriminant | Shape | Committed? |
+|---|---|---|---|
+| 1 | `members` present | **Platform definition** — the checked-in canonical membership at a platform root | yes |
+| 2 | else `platform` present | **Member marker** — committed identity + root hint inside each member | yes |
+| 3 | else | **Unit-level config** — today's `PlatformMapConfig`, byte-for-byte unchanged (rungs 1–2) | yes |
+
+```ts
+/** Shape 1 — platform definition (identity only, D-02). */
+export interface PlatformDefinition {
+  name: string;                            // the platform name (required, non-empty)
+  members: Array<{
+    name: string;                          // required, non-empty
+    path?: string;                         // relative dir; DEFAULTS TO name (child-dir convention)
+  }>;                                      // required, non-empty
+  ignore?: string[];                       // globs excluded from the child scan
+}
+// `platform`, `root`, `units`, and `overrides` are FORBIDDEN alongside
+// `members` — each yields a distinct validation reason.
+
+/** Shape 2 — member marker (identity + root hint only, D-03). */
+export interface MemberMarker {
+  platform: string;                        // required, non-empty — the platform name
+  root?: string;                           // relative hint to the platform root; default ".."
+}
+// `units` is FORBIDDEN alongside `platform`; `name`/`ignore`/`overrides`
+// coexist and keep their rung-1/2 meaning when the member maps standalone.
+```
+
+Example definition (at the platform root, committed):
+
+```json
+{
+  "name": "acme",
+  "members": [
+    { "name": "svc-api" },
+    { "name": "svc-worker" },
+    { "name": "webapp" }
+  ],
+  "ignore": ["scratch", "archive-*"]
+}
+```
+
+Example marker (inside each member, committed):
+
+```json
+{
+  "platform": "acme",
+  "root": ".."
+}
+```
+
+No sibling lists, no machine paths — in either committed file (D-02/D-03).
+
+### 3.2 `platform-map.local.json` — per-user disk locations
+
+```ts
+export interface PlatformLocalConfig {
+  /** memberName → path (relative to the platform root, or absolute). */
+  locations?: Record<string, string>;
+}
+```
+
+Lives at the platform root, **never committed** (gitignore it), read ONLY when
+a definition is present at the resolved root — rungs 1/2 never touch it. It
+relocates WHERE a member is read from disk; the unit's `path` in output is
+always the definition's conventional relative path, which is what keeps output
+byte-identical with and without an equivalent override and keeps machine paths
+out of output. Read is LENIENT: a malformed or unreadable local file degrades
+to a `MALFORMED_CONFIG` warning, never a throw — per-user machine state must
+not brick the map.
+
+### 3.3 `PLATFORM_DRIFT` (additive diagnostic code)
+
+Emitted when platform files disagree with reality, with a distinct stable
+message prefix per sub-case: marker platform-name mismatch (warning), marker
+root-hint mismatch (warning), dangling marker — hint target holds no
+definition (warning), listed-but-missing member (warning; the unit is still
+emitted with empty signals — identity exists, location doesn't), dangling
+local override (warning), and non-repo child dir at a platform root (info,
+D-04). Boundary escapes (a marker hint or local override resolving outside
+the boundary) reuse `UNIT_PATH_ESCAPE` with an "escapes resolution boundary"
+message. Diagnostic messages carry member names and relative paths only —
+never machine/absolute paths (D-02).
 
 ## 4. Functions
 
@@ -170,6 +261,11 @@ export interface MapOptions extends DetectOptions {
    *  when the tool prefers to pass config rather than have us read it).
    *  Injected units are source:"caller" and rank just below canonical. */
   units?: Array<{ name: string; path: string; ref?: string }>;
+  /** RED-97: the directory above which upward platform resolution never
+   *  ascends and outside which marker/local-override resolution is never
+   *  followed. Default os.homedir(). A given root OUTSIDE the boundary makes
+   *  resolution inert (rung-1/2 behavior, byte-identical). */
+  boundary?: string;
 }
 export type AdapterName = "canonical" | "dark-factory" | "spec-engine" | "workspace" | "siblings";
 
@@ -204,10 +300,45 @@ Evaluated top-down; first match wins. Absent signal = no vote (unknown-honesty).
 
 Config `overrides` beat all rules. The rules are documented in the README verbatim — the derivation must never be folklore. Sanity anchor: on spec-engine's own monorepo this yields engine/shared/tracker → library, webapp → app.
 
+### 4.1 Platform resolution (RED-97) — a pre-detect step inside `map()`
+
+Resolution runs BEFORE `detect()` (an adapter cannot re-anchor the map root):
+
+1. **Upward walk.** From the given root, ascend parent-by-parent while inside
+   the boundary (`MapOptions.boundary`, default `os.homedir()`). At each dir,
+   sniff `platform-map.json`: a **definition** → that dir is the platform
+   root; a **marker** → resolve its root hint once (the target must be inside
+   the boundary AND hold a definition, else a dangling-marker `PLATFORM_DRIFT`
+   + rung-1/2 fallback); a **unit-level config** → STOP with no platform
+   context (a rung-1/2 repo explicitly self-describes — the back-compat
+   firewall); **malformed** → stop + `MALFORMED_CONFIG` warning + fallback
+   (unless it is the given root itself, where the strict canonical read's
+   `MalformedConfigError` applies as today); **absent** → continue up. Nothing
+   found by the boundary → no platform context, existing behavior.
+2. **Re-anchoring.** When resolution lands on a different root, the ENTIRE
+   pipeline proceeds from the resolved platform root — `pm.root` becomes the
+   resolved root (the documented caller-anchor exception). Because drift
+   checks run at assembly time (not resolution time), `map()` from inside a
+   member and `map()` at the root emit identical diagnostic sets — output is
+   byte-identical including `root`.
+3. **Definition at the root.** Forces `mode: "multi-repo"`, `pm.name` = the
+   definition's name, and the child scan (`scanRoot "."`): members become
+   declared units riding the EXISTING canonical machinery — their `sources`
+   is always `["canonical"]` (a member is a canonically declared identity,
+   regardless of physical presence or local relocation; it does not pick up
+   sibling-scan-derived signals like `hasDfPointer` at rung 3). Unlisted
+   `.git` children surface as `UNCONFIGURED_SIBLING` through the unchanged
+   merge promotion gate (D-04); non-repo child dirs get a `PLATFORM_DRIFT`
+   info.
+
+Precedence (D-05): definition at root > marker-based upward resolution >
+the existing `".."` sibling scan (unchanged zero-config fallback).
+
 ## 5. Determinism & error contract
 
 - Same tree in → byte-identical JSON out. Sorted units/edges/diagnostics, stable key order via a single serializer (`toJSON()` on PlatformMap), no timestamps, no absolute paths in output (root-relative only).
-- `map()` throws only for: nonexistent root, malformed *canonical* config. Everything else — unreadable sibling, bad adapter file, glob matching nothing, cycles — degrades to diagnostics. (A mapping tool that dies on the messy platforms that most need mapping is useless; SE's never-fail-non-git ethos, generalized.)
+- `map()` throws only for: nonexistent root, malformed *canonical* config (SEC-01 — unchanged by RED-97; the malformed-config throw now applies to the file at the *resolved* root). Everything else — unreadable sibling, bad adapter file, glob matching nothing, cycles, every platform-resolution failure (drifted markers, dangling overrides, malformed ancestor files, malformed local config, boundary escapes) — degrades to diagnostics. (A mapping tool that dies on the messy platforms that most need mapping is useless; SE's never-fail-non-git ethos, generalized.)
+- Run-anywhere equivalence (RED-97): in a platform holding a checked-in definition, `map()` at the platform root, at a member root, or in any nested member subdir produces byte-identical JSON — including `root`, which re-anchors to the resolved platform root. A local location override changes where a member is read from disk, never any byte of output.
 - Bounded I/O: git ref probes use DF's timeout-bounded exec pattern (T-03.05-04 — one hostile sibling must never hang the map); file-census scans have a depth/count cap, reported when hit (no silent truncation).
 
 ## 6. Security posture (inherited from DF, kept as contracts)
@@ -217,6 +348,7 @@ Config `overrides` beat all rules. The rules are documented in the README verbat
 - Symlinks not followed during workspace walks (T-04.01-04).
 - Package names validated against DF's `/^@?[a-z0-9][a-z0-9._/-]*$/i` before entering the model (T-04.01-03).
 - No network, no git mutations, no writes (except CLI `init`).
+- Containment (RED-97, D-06): the upward platform walk, marker root hints, and `platform-map.local.json` location overrides never resolve outside the boundary (default `os.homedir()`); an escaping resolution becomes a diagnostic and is never followed. The walk performs one bounded sniff-read per level, follows no symlinked ancestry, and never throws for files at other directories.
 
 ## 7. CLI surface (thin mapping onto §4)
 
@@ -227,6 +359,7 @@ Config `overrides` beat all rules. The rules are documented in the README verbat
 | `platform-map detect` | `detect(".")` | Detection JSON |
 | `platform-map graph [--dot]` | `graph(map("."))` | edges / DOT for rendering |
 | `platform-map init [--yes]` | `detect` → proposal → confirm → write | the one writer (D7) |
+| `platform-map init [--yes]` at a manifest-less dir with `.git` children | `detect(dir, scanRoot ".")` → platform plan → confirm → write | RED-97 platform bootstrap: writes the definition at the root plus one marker per member; the plan (one JSON object keyed by root-relative file path) prints to stdout and every path is listed on stderr before the confirm; root file exists → whole init refuses; a member's file exists → that file is skipped with a note, the rest still written. Never writes `platform-map.local.json`, never touches `.gitignore`. |
 
 Exit codes: 0 ok, 1 usage/hard error, 2 ok-with-error-severity-diagnostics (greppable by CI).
 

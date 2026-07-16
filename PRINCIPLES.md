@@ -119,12 +119,16 @@ platform-map anywhere in the platform yields the same map.
 adoption rungs proved the progressive-disclosure shape. platform-map
 generalizes both into a tool-neutral form.
 
-*Verified by (target):* PMAP-010/011/012.
-**Status: GAP — tracked in RED-97.** What exists instead today: an in-repo
-`platform-map.json` (rungs 1–2 work now) and a one-level sibling scan; running
-at a platform root does not yet find member children, and members are not yet
-self-aware. This pillar is launch-blocking and this paragraph must be updated
-when RED-97 lands.
+*Verified by:* PMAP-010/011/012 — `test/platform-root.test.js`
+(discriminated schemas, bounded upward walk, containment),
+`test/platform-convention.test.js` (rung-3 assembly, the PMAP-010
+byte-equivalence matrix across root/member/nested-subdir, local-override
+relocation with byte-identical output, drift diagnostics),
+`test/cli-init-platform.test.js` (the `init` platform bootstrap round-trip).
+**Status: real** (RED-97, 2026-07-16). Running `map()` at the platform root,
+a member root, or any nested member subdir yields byte-identical JSON;
+members carry committed markers; disk locations are per-user
+(`platform-map.local.json`, gitignored) and never appear in output.
 
 ---
 
@@ -146,5 +150,5 @@ when RED-97 lands.
 | 4 Honest about unknowns | PMAP-004 | real |
 | 5 Deterministic to the byte | PMAP-001 | real |
 | 6 Safe to run anywhere | PMAP-005, PMAP-006, PMAP-007, PMAP-008 | real |
-| 7 Self-describing on disk | PMAP-010, PMAP-011, PMAP-012 | gap → RED-97 |
+| 7 Self-describing on disk | PMAP-010, PMAP-011, PMAP-012 | real |
 | (roadmap) Cross-repo edges | PMAP-013 | gap → RED-98 |
