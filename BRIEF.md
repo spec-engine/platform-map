@@ -2,7 +2,7 @@
 
 **Status:** draft for review · **Date:** 2026-07-11 · **License:** MIT · **Org:** spec-engine (public)
 
-`platform-map` is a small, zero-dependency utility that answers one question deterministically: **"What is this platform made of?"** — which repos and workspace units exist, how they relate, and what each one is. It exists so Dark Factory, Spec Engine, Clarity Audit, agents, and humans all share one mental model of platform topology instead of four private ones.
+`platform-map` is a small, zero-dependency utility that answers one question deterministically: **"What is this platform made of?"** — it maps a platform of repos and monorepos into the services or packages they represent, so that human developers, teams, and agents all share the same mental model of the platforms they maintain. A platform can be a single repo, multiple repos, a monorepo, or a mix of single repos and monorepos: a consistent way to map and connect otherwise non-relational repos, usable locally by developers and teams to make changes platform-wide instead of managing tickets and changes per repo only. Dark Factory, Spec Engine, and Clarity Audit are its first consumers.
 
 ---
 

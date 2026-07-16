@@ -4,9 +4,9 @@
 
 **platform-map**
 
-`platform-map` is a small, zero-dependency TypeScript library + CLI that answers one question deterministically: **"What is this platform made of?"** — which repos and workspace units exist, how they relate, and what each one is. It exists so Dark Factory, Spec Engine, Clarity Audit, agents, and humans all share one mental model of platform topology instead of four private ones. Published as `@spec-engine/platform-map` (MIT, public).
+`platform-map` is a small, zero-dependency TypeScript library + CLI that answers one question deterministically: **"What is this platform made of?"** — it maps a platform of repos and monorepos into the services or packages they represent, so that human developers, teams, and agents all share the same mental model of the platforms they maintain. A platform can be a single repo, multiple repos, a monorepo, or a mix of both. Dark Factory, Spec Engine, and Clarity Audit are its first consumers. Published as `@spec-engine/platform-map` (MIT, public).
 
-**Core Value:** Given any directory tree, produce one deterministic, honest topology map (units + edges + diagnostics) that the three redhook tools and any agent can trust and re-derive — replacing three divergent detection implementations with one shared substrate.
+**Core Value:** Given any directory tree, produce one deterministic, honest topology map (units + edges + diagnostics) that any developer, team, tool, or agent can trust and re-derive — one consistent way to map and connect otherwise non-relational repos, so changes can be made platform-wide instead of per repo only.
 
 ### Constraints
 

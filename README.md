@@ -1,13 +1,18 @@
 # @spec-engine/platform-map
 
 A small, zero-runtime-dependency TypeScript library + CLI that answers one
-question deterministically: **"What is this platform made of?"** — which
-repos and workspace units exist, how they relate, and what each one is.
+question deterministically: **"What is this platform made of?"**
 
-Given any directory tree, `platform-map` produces one deterministic, honest
-topology map (units + edges + diagnostics) that Dark Factory, Spec Engine,
-Clarity Audit, agents, and humans can all trust and re-derive — replacing
-three divergent detection implementations with one shared substrate.
+`platform-map` maps a platform of repos and monorepos into the services and
+packages they represent, so human developers, teams, and agents all share
+the same mental model of the platforms they maintain. A platform can be a
+single repo, multiple repos, a monorepo, or a mix of single repos and
+monorepos. Given any directory tree, `platform-map` produces one
+deterministic, honest topology map (units + edges + diagnostics) — a
+consistent way to map and connect otherwise non-relational repos, so teams
+can make changes platform-wide instead of managing tickets and changes per
+repo only. Dark Factory, Spec Engine, and Clarity Audit are its
+first consumers, building on the same shared map.
 
 > **Status:** Phase 1 (foundation scaffold). The public type contract and the
 > deterministic serializer are in place; `detect()`, the adapters, `map()`,
