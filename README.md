@@ -30,6 +30,35 @@ npm install @spec-engine/platform-map
 
 Zero runtime dependencies. Requires Node `>=20` or Bun.
 
+## See it
+
+Three unrelated repos — a plain service, a whole monorepo, and a stray
+experiment — become one map:
+
+```mermaid
+flowchart TD
+  subgraph acme ["acme — multi-repo platform"]
+    svc["svc-api — repo, app"]
+    subgraph web ["web-mono — repo, monorepo"]
+      site["packages/site — app"] -- "workspace-dependency" --> ui["packages/ui — library"]
+    end
+  end
+  scratch["scratch-experiment — .git child nobody declared"] -. "UNCONFIGURED_SIBLING (flagged, never absorbed)" .-> acme
+```
+
+The full visual walkthrough — real directory trees next to the real maps the
+CLI produced from them, for every platform shape — is
+[docs/demo.html](./docs/demo.html) (self-contained, open it in any browser).
+To rebuild and verify all of it live on your machine:
+
+```bash
+npm run demo                            # builds fixtures, runs the CLI, 28 checked assertions
+node scripts/demo-platform.mjs --keep   # same, but leaves the trees on disk to explore
+```
+
+The same flow runs inside the test suite (`test/demo.test.js`), so this page
+and the demo can never silently drift from what the library actually does.
+
 ## Determinism
 
 `toJSON(pm)` and `serialize(pm)` (exported from the package root) are the
