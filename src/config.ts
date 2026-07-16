@@ -57,6 +57,18 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** WR-01: extracts ONLY the errno code from an fs error. Node interpolates the
+ *  ABSOLUTE file path into fs error messages (`EACCES ... open '/Users/...'`),
+ *  so `e.message` must never reach a reason string that can land in
+ *  `pm.diagnostics` (D-02/§5: member names and root-relative paths only). */
+function fsErrorCode(e: unknown): string {
+  if (e instanceof Error && "code" in e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (typeof code === "string" && code.length > 0) return code;
+  }
+  return "unknown";
+}
+
 /**
  * Hand-rolled strict shape check over the KNOWN keys of PlatformMapConfig.
  * Returns a human-readable reason string on the first violation, or `null` when
@@ -297,7 +309,9 @@ export function classifyPlatformFile(root: string): PlatformFileClassification {
   } catch (e) {
     return {
       kind: "malformed",
-      reason: `${CONFIG_FILENAME} at ${CONFIG_FILENAME} could not be read: ${msg(e)}`,
+      // Code only — never the fs error message, which embeds the absolute
+      // path (WR-01); this reason can reach pm.diagnostics via the resolver.
+      reason: `${CONFIG_FILENAME} at ${CONFIG_FILENAME} could not be read (${fsErrorCode(e)})`,
     };
   }
 
@@ -443,7 +457,8 @@ export function readLocalConfig(root: string): ReadLocalConfigResult | null {
   } catch (e) {
     return {
       ok: false,
-      diagnostic: localConfigDiagnostic(`could not be read: ${msg(e)}`),
+      // Code only — never the fs error message (absolute-path leak, WR-01).
+      diagnostic: localConfigDiagnostic(`could not be read (${fsErrorCode(e)})`),
     };
   }
 

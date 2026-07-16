@@ -268,6 +268,44 @@ test("readLocalConfig: malformed JSON / wrong shape -> diagnostic result, never 
   }
 });
 
+test("WR-01: unreadable ancestor platform-map.json -> diagnostic carries the errno code, never an absolute path", () => {
+  const parent = mktree();
+  try {
+    // A DIRECTORY at the config path forces a deterministic EISDIR read
+    // failure (chmod is unreliable when tests run as root).
+    const broken = path.join(parent, "broken");
+    fs.mkdirSync(path.join(broken, "platform-map.json"), { recursive: true });
+    const sub = path.join(broken, "sub");
+    fs.mkdirSync(sub, { recursive: true });
+    const ctx = resolvePlatformContext(sub, parent);
+    assert.equal(ctx.root, null);
+    assert.equal(ctx.diagnostics.length, 1);
+    const d = ctx.diagnostics[0];
+    assert.equal(d.code, "MALFORMED_CONFIG");
+    assert.ok(d.message.includes("could not be read (EISDIR)"));
+    assert.ok(
+      !d.message.includes(parent),
+      "fs error messages embed absolute paths and must never reach diagnostics",
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("WR-01: unreadable platform-map.local.json -> diagnostic carries the errno code, never an absolute path", () => {
+  const root = mktree();
+  try {
+    fs.mkdirSync(path.join(root, "platform-map.local.json")); // EISDIR on read
+    const r = readLocalConfig(root);
+    assert.equal(r.ok, false);
+    assert.equal(r.diagnostic.code, "MALFORMED_CONFIG");
+    assert.ok(r.diagnostic.message.includes("could not be read (EISDIR)"));
+    assert.ok(!r.diagnostic.message.includes(root));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("readLocalConfig: __proto__/constructor/prototype location keys are skipped", () => {
   const root = mktree();
   try {
