@@ -18,17 +18,27 @@
 // path escaping the platform root is DROPPED with a UNIT_PATH_ESCAPE diagnostic,
 // never followed (T-02-17).
 
-import { readCanonicalConfig } from "../config.js";
+import { readPlatformFile } from "../config.js";
 import { resolveWithinRoot } from "../internal/path-guard.js";
-import type { Diagnostic } from "../types.js";
+import type { Diagnostic, PlatformMapConfig } from "../types.js";
 import type { AdapterContext, AdapterResult, PartialUnit } from "./index.js";
 
 /**
- * Reads `<root>/platform-map.json` via readCanonicalConfig (letting
- * MalformedConfigError propagate — the one adapter allowed to throw) and maps
- * declared `units[]` into `kind:"repo"` PartialUnits. Returns an empty result
- * when the config is absent. Surfaces name/ignore/overrides + the
- * `declaredUnits` promotion-gate flag on the `canonical` side-channel.
+ * Reads `<root>/platform-map.json` via the discriminated readPlatformFile
+ * (RED-97 IP-1; MalformedConfigError propagates — the one adapter allowed to
+ * throw) and maps declared units into `kind:"repo"` PartialUnits:
+ *
+ *  - kind "config"     -> exactly the pre-RED-97 result (no behavior delta).
+ *  - kind "definition" -> PartialUnits from members (path defaults to the
+ *    member name, the child-dir convention), side-channel
+ *    { name, ignore, declaredUnits: true } — so merge()'s promotion gate
+ *    delivers D-04's UNCONFIGURED_SIBLING for unlisted children with ZERO
+ *    merge changes (the D-05 canonical-rank reuse).
+ *  - kind "marker"     -> behaves exactly as the coexisting rung-1/2 config
+ *    (the marker itself is a map()-level concern); this branch is only
+ *    reached in the dangling-marker fallback.
+ *
+ * Returns an empty result when the file is absent.
  */
 export function canonicalAdapter(
   root: string,
@@ -36,11 +46,47 @@ export function canonicalAdapter(
 ): AdapterResult {
   // MalformedConfigError propagates (SEC-01): a present-but-broken canonical
   // config is a hard error, unlike every other adapter source.
-  const config = readCanonicalConfig(root);
-  if (config === null) {
+  const file = readPlatformFile(root);
+  if (file.kind === "absent") {
     // Absent config = fine (D8). No side-channel: declaredUnits defaults false.
     return { partialUnits: [], edges: [], diagnostics: [] };
   }
+
+  if (file.kind === "definition") {
+    const partialUnits: PartialUnit[] = [];
+    const diagnostics: Diagnostic[] = [];
+    for (const m of file.definition.members) {
+      // T-02-17: a member path escaping the platform root is dropped + diagnosed.
+      const guard = resolveWithinRoot(root, m.path ?? m.name);
+      if (!guard.ok) {
+        diagnostics.push(guard.diagnostic);
+        continue;
+      }
+      partialUnits.push({
+        name: m.name,
+        path: guard.relative,
+        kind: "repo",
+        source: "canonical",
+      });
+    }
+    return {
+      partialUnits,
+      edges: [],
+      diagnostics,
+      canonical: {
+        name: file.definition.name,
+        ignore: file.definition.ignore,
+        // `overrides` is forbidden alongside `members` (IP-1) — never present.
+        // Explicit membership always gates promotion (D-04): members is a
+        // non-empty array by validation, so declaredUnits is always true here.
+        declaredUnits: true,
+      },
+    };
+  }
+
+  // "config" and "marker" alike: the (coexisting) rung-1/2 config drives
+  // exactly the pre-RED-97 behavior below.
+  const config: PlatformMapConfig = file.config;
 
   const partialUnits: PartialUnit[] = [];
   const diagnostics: Diagnostic[] = [];

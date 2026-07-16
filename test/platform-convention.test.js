@@ -108,7 +108,11 @@ test("rung 3 at root: definition yields member units for mixed shapes (PMAP-011,
     );
     // the monorepo member's internal edge is present
     assert.deepEqual(pm.edges, [
-      { from: "packages/app", to: "packages/core", via: "workspace-dependency" },
+      {
+        from: "packages/app",
+        to: "packages/core",
+        via: "workspace-dependency",
+      },
     ]);
 
     const plain = pm.units.find((u) => u.name === "plain-svc");
@@ -348,14 +352,14 @@ test("local override: unknown member -> dangling-override drift; boundary escape
     assert.equal(dangling.severity, "warning");
     assert.ok(dangling.message.includes('"ghost"'));
 
-    const escape = pm.diagnostics.find(
+    const escapeDiag = pm.diagnostics.find(
       (d) =>
         d.code === "UNIT_PATH_ESCAPE" &&
         d.message.includes("escapes resolution boundary"),
     );
-    assert.ok(escape);
-    assert.ok(escape.message.includes('"svc"'));
-    assert.ok(!escape.message.includes(parent)); // never a machine path
+    assert.ok(escapeDiag);
+    assert.ok(escapeDiag.message.includes('"svc"'));
+    assert.ok(!escapeDiag.message.includes(parent)); // never a machine path
 
     // the escaped member is treated as missing: unit still emitted, empty
     // signals (the conventional dir is NOT read), plus listed-member drift

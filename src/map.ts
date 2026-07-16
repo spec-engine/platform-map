@@ -30,6 +30,8 @@
 // overrides win, MODEL-03/04). Degrees are written BEFORE roles so deriveRole's
 // degree-sensitive rules never read undefined.
 
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type {
   Adapter,
@@ -40,11 +42,17 @@ import type {
 } from "./adapters/index.js";
 import { PRECEDENCE, selectAdapters } from "./adapters/index.js";
 import { workspaceAdapter } from "./adapters/workspace.js";
-import { readCanonicalConfig } from "./config.js";
+import { readCanonicalConfig, readLocalConfig } from "./config.js";
 import { detect } from "./detect.js";
 import { buildEdges, populateDegrees } from "./edges.js";
 import { MalformedConfigError, RootNotFoundError } from "./errors.js";
+import { matchGlob } from "./internal/glob.js";
 import { resolveWithinRoot } from "./internal/path-guard.js";
+import {
+  isInsideBoundary,
+  resolvePlatformContext,
+  sniffPlatformFile,
+} from "./internal/platform-root.js";
 import { probeRef } from "./internal/ref-probe.js";
 import { canonicalCycles } from "./internal/scc.js";
 import { serialize } from "./internal/serialize.js";
@@ -56,6 +64,7 @@ import type {
   Diagnostic,
   Edge,
   MapOptions,
+  PlatformDefinition,
   PlatformMap,
   Unit,
   UnitSignals,
@@ -140,6 +149,102 @@ function cycleSuspectedDiagnostic(cycle: string[]): Diagnostic {
   };
 }
 
+// ── RED-97 (IP-5/IP-7): platform drift diagnostics — stable message prefixes
+// per sub-case, member names and root-relative paths only, never machine/
+// absolute paths (D-02). ────────────────────────────────────────────────────
+
+function danglingOverrideDiagnostic(memberName: string): Diagnostic {
+  return {
+    code: "PLATFORM_DRIFT",
+    severity: "warning",
+    path: "platform-map.local.json",
+    message: `PLATFORM_DRIFT: dangling local override: platform-map.local.json names "${memberName}" which is not a listed member`,
+  };
+}
+
+/** A local override escaping the resolution boundary reuses UNIT_PATH_ESCAPE
+ *  with the "escapes resolution boundary" message (IP-5). Carries the member
+ *  NAME only — the override value may be an absolute machine path and must
+ *  never appear in output (D-02). */
+function overrideEscapeDiagnostic(memberName: string): Diagnostic {
+  return {
+    code: "UNIT_PATH_ESCAPE",
+    severity: "warning",
+    path: memberName,
+    message: `UNIT_PATH_ESCAPE: local location override for member "${memberName}" escapes resolution boundary`,
+  };
+}
+
+function missingMemberDiagnostic(
+  memberName: string,
+  conventionalPath: string,
+): Diagnostic {
+  return {
+    code: "PLATFORM_DRIFT",
+    severity: "warning",
+    path: conventionalPath,
+    message: `PLATFORM_DRIFT: listed member missing: "${memberName}" not found at "${conventionalPath}"`,
+  };
+}
+
+function markerNameMismatchDiagnostic(
+  memberName: string,
+  conventionalPath: string,
+  found: string,
+  expected: string,
+): Diagnostic {
+  return {
+    code: "PLATFORM_DRIFT",
+    severity: "warning",
+    path: conventionalPath,
+    message: `PLATFORM_DRIFT: marker platform-name mismatch: member "${memberName}" marker names "${found}" but the definition names "${expected}"`,
+  };
+}
+
+function markerRootHintMismatchDiagnostic(
+  memberName: string,
+  conventionalPath: string,
+  hint: string,
+): Diagnostic {
+  return {
+    code: "PLATFORM_DRIFT",
+    severity: "warning",
+    path: conventionalPath,
+    message: `PLATFORM_DRIFT: marker root-hint mismatch: member "${memberName}" root hint "${hint}" does not resolve to the platform root`,
+  };
+}
+
+/** D-04: a platform-root child dir that is neither a git repo nor a listed
+ *  member is surfaced (info), never silent. */
+function nonRepoChildDiagnostic(entryName: string): Diagnostic {
+  return {
+    code: "PLATFORM_DRIFT",
+    severity: "info",
+    path: entryName,
+    message: `PLATFORM_DRIFT: non-repo child: "${entryName}" at the platform root is neither a git repo nor a listed member`,
+  };
+}
+
+/** WR-04-style degrade for the assembly drift-check block: an unexpected throw
+ *  becomes a diagnostic, never escapes map() (SEC-01). */
+function driftCheckFailureDiagnostic(error: unknown): Diagnostic {
+  const reason = error instanceof Error ? error.message : String(error);
+  return {
+    code: "MALFORMED_CONFIG",
+    severity: "warning",
+    path: "platform-map.json",
+    message: `MALFORMED_CONFIG: platform drift check failed: ${reason}`,
+  };
+}
+
+function isDirectory(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** Gap-fills map-owned census facts onto a unit's signals WITHOUT overwriting
  *  any key an adapter already claimed (adapter linkage signals win on the rare
  *  collision; census and linkage keys are otherwise disjoint). Only known keys
@@ -170,8 +275,13 @@ function enrichUnit(
   depth: number,
   diagnostics: Diagnostic[],
   depSideTable: Map<string, string[]>,
+  absDirOverride?: string,
 ): void {
-  const absDir = path.join(root, unit.path);
+  // RED-97 (IP-6): a local disk-location override changes WHERE the member is
+  // read from (census, nested workspace expansion) — never unit.path in
+  // output. Only map()'s top-level loop supplies an override; recursion below
+  // stays conventional relative to the (possibly overridden) parent dir.
+  const absDir = absDirOverride ?? path.join(root, unit.path);
 
   // WR-01: pass the unit's platform-relative path as the census locus so an
   // invalid-package-name MALFORMED_CONFIG diagnostic reports which unit it came
@@ -240,26 +350,86 @@ export async function map(
   root: string,
   opts: MapOptions = {},
 ): Promise<PlatformMap> {
-  // SEC-01 hard-error #2: a PRESENT-but-malformed platform-map.json throws
-  // MalformedConfigError before detection/adapters run. This pre-read exists so
-  // the config's `ignore` can be threaded into detect()'s sibling scan (the
-  // pre-detection chicken-and-egg) AND is guarded by the canonical adapter's
-  // CFG-09 disable toggle (disabled => never read the file). The canonical
-  // adapter re-reads the (now-known-valid) config in the fold to produce its
-  // units + side-channel; the two reads always agree (no writes, same process).
   const canonicalEnabled = opts.adapters?.canonical !== false;
-  const preConfig = canonicalEnabled ? readCanonicalConfig(root) : null;
+
+  // Adapter-failure + injected-path-escape + platform-resolution diagnostics
+  // live outside the adapter results; threaded into the final map below.
+  const extraDiagnostics: Diagnostic[] = [];
+
+  // RED-97 (IP-3): pre-detect platform resolution — an adapter cannot
+  // re-anchor the map root, so the bounded upward walk (IP-8) runs BEFORE
+  // detect(). Gated on the canonical toggle (CFG-09: disabled => never read
+  // platform-map.json files) and on the root existing (a nonexistent root must
+  // still reach detect()'s RootNotFoundError throw, SEC-01). When resolution
+  // yields null, everything platform-shaped below is skipped and this function
+  // is byte-for-byte the pre-RED-97 map() — the rung-1/2 firewall.
+  const boundary = opts.boundary ?? os.homedir();
+  let effectiveRoot = root;
+  let definition: PlatformDefinition | null = null;
+  if (canonicalEnabled && fs.existsSync(root)) {
+    const resolution = resolvePlatformContext(root, boundary);
+    for (const d of resolution.diagnostics) extraDiagnostics.push(d);
+    if (resolution.root !== null && resolution.definition !== undefined) {
+      definition = resolution.definition;
+      // Re-anchor ONLY when the resolved root is a different directory —
+      // pm.root stays the caller's own string otherwise (byte-compat). When
+      // re-anchored, pm.root becomes the resolved platform root: the
+      // documented caller-anchor exception (IP-7), which is exactly what makes
+      // map()-from-inside byte-identical to map()-at-root (PMAP-010).
+      if (path.resolve(root) !== resolution.root) {
+        effectiveRoot = resolution.root;
+      }
+    }
+  }
+
+  // SEC-01 hard-error #2: a PRESENT-but-malformed platform-map.json throws
+  // MalformedConfigError before detection/adapters run — now possibly for the
+  // file at the RESOLVED root. This pre-read exists so the config's `ignore`
+  // can be threaded into detect()'s sibling scan (the pre-detection
+  // chicken-and-egg) AND is guarded by the canonical adapter's CFG-09 disable
+  // toggle (disabled => never read the file). The canonical adapter re-reads
+  // the (now-known-valid) file in the fold to produce its units +
+  // side-channel; the two reads always agree (no writes, same process). When
+  // the resolver already delivered the definition, it is threaded directly —
+  // no re-read (IP-3).
+  const preConfig =
+    canonicalEnabled && definition === null
+      ? readCanonicalConfig(effectiveRoot)
+      : null;
   const effectiveIgnore = [
     ...(opts.ignore ?? []),
-    ...(preConfig?.ignore ?? []),
+    ...(definition !== null
+      ? (definition.ignore ?? [])
+      : (preConfig?.ignore ?? [])),
   ];
 
   // detect() is the throwing gate: it performs the nonexistent-root check and
-  // throws RootNotFoundError (SEC-01) before any adapter runs.
-  const detection = detect(root, {
-    scanRoot: opts.scanRoot,
+  // throws RootNotFoundError (SEC-01) before any adapter runs. With a
+  // definition at the (possibly re-anchored) root, scanRoot is forced to "."
+  // so the platform root's own children become detection.siblings, flowing
+  // through the untouched siblings adapter + merge promotion gate — unlisted
+  // .git children come out as UNCONFIGURED_SIBLING with zero merge changes
+  // (D-04, IP-3).
+  const detection = detect(effectiveRoot, {
+    scanRoot: definition !== null ? "." : opts.scanRoot,
     ignore: effectiveIgnore,
   });
+
+  // Listed members are canonical-declared IDENTITIES, not sibling candidates:
+  // drop them from the child scan so a member's physical presence (or local
+  // relocation, IP-6) never changes its unit's sources/signals — this is what
+  // keeps output byte-identical with and without an equivalent local override.
+  // Unlisted children stay, feeding the D-04 promotion gate above. The array
+  // is ALWAYS materialized (even empty) so the siblings adapter reuses the
+  // "."-rooted child scan and never falls back to its own ".." parent scan.
+  if (definition !== null) {
+    const memberPaths = new Set(
+      definition.members.map((m) => m.path ?? m.name),
+    );
+    detection.siblings = (detection.siblings ?? []).filter(
+      (s) => !memberPaths.has(s.path),
+    );
+  }
 
   const ctx: AdapterContext = {
     detection,
@@ -276,9 +446,6 @@ export async function map(
     source: AdapterName | "caller";
     result: AdapterResult;
   }> = [];
-  // Adapter-failure + injected-path-escape diagnostics live outside the
-  // adapter results, so thread them into the final map alongside merge()'s.
-  const extraDiagnostics: Diagnostic[] = [];
 
   for (const name of PRECEDENCE) {
     if (name === "caller") {
@@ -287,7 +454,7 @@ export async function map(
         for (const u of opts.units) {
           // T-02-01: an injected path escaping root is dropped + diagnosed,
           // never followed.
-          const guard = resolveWithinRoot(root, u.path);
+          const guard = resolveWithinRoot(effectiveRoot, u.path);
           if (!guard.ok) {
             extraDiagnostics.push(guard.diagnostic);
             continue;
@@ -312,7 +479,7 @@ export async function map(
     if (adapter === undefined) continue;
     try {
       // Adapters may be sync or async; await handles both.
-      const result = await adapter(root, ctx);
+      const result = await adapter(effectiveRoot, ctx);
       results.push({ source: name, result });
     } catch (error) {
       // SEC-01: the TWO hard-error classes propagate — RootNotFoundError and
@@ -342,6 +509,52 @@ export async function map(
   // turns unconfirmed siblings into UNCONFIGURED_SIBLING diagnostics.
   const merged = merge(results, canonicalSide?.declaredUnits ?? false);
 
+  // RED-97 (IP-6, D-02): per-user local disk-location overrides. Read ONLY
+  // when a definition is present at the resolved root — rungs 1/2 never touch
+  // the file. The table redirects WHERE a member is read from disk (census,
+  // ref probe, nested workspace expansion) — never the unit's `path` in
+  // output. `null` marks a member forcibly missing (its override escaped the
+  // boundary — the dir is NOT read, not even at the conventional location).
+  const diskDirByName = new Map<string, string | null>();
+  if (definition !== null) {
+    const local = readLocalConfig(effectiveRoot);
+    if (local !== null) {
+      if (!local.ok) {
+        // Malformed per-user machine state must never brick the map (IP-1).
+        extraDiagnostics.push(local.diagnostic);
+      } else if (local.config.locations !== undefined) {
+        const memberNames = new Set(definition.members.map((m) => m.name));
+        const locations = local.config.locations;
+        for (const key of Object.keys(locations)) {
+          const value = locations[key];
+          if (value === undefined) continue;
+          if (!memberNames.has(key)) {
+            extraDiagnostics.push(danglingOverrideDiagnostic(key));
+            continue;
+          }
+          // Relative to the platform root, or absolute — but never outside
+          // the resolution boundary (D-06): an escape is diagnosed and the
+          // member treated as missing, never followed.
+          const target = path.resolve(effectiveRoot, value);
+          if (!isInsideBoundary(path.resolve(boundary), target)) {
+            extraDiagnostics.push(overrideEscapeDiagnostic(key));
+            diskDirByName.set(key, null);
+            continue;
+          }
+          diskDirByName.set(key, target);
+        }
+      }
+    }
+  }
+
+  /** The disk directory a top-level unit is read from: the local-override
+   *  table by unit name (null = forcibly missing), else the conventional
+   *  path under the (possibly re-anchored) root. */
+  const unitDiskDir = (unit: Unit): string | null =>
+    diskDirByName.has(unit.name)
+      ? (diskDirByName.get(unit.name) as string | null)
+      : path.join(effectiveRoot, unit.path);
+
   // map() owns the per-unit fs signal census + DET-02 monorepo recursion
   // (CONTEXT signal-ownership split). Census diagnostics join the map's.
   // WR-04: this loop runs under the SAME SEC-01 discipline as the adapter fold
@@ -353,8 +566,12 @@ export async function map(
   // by enrichUnit at every depth; consumed by buildEdges after the loop.
   const depSideTable = new Map<string, string[]>();
   for (const unit of merged.units) {
+    const dir = unitDiskDir(unit);
+    // A forcibly-missing member (escaped override) is never read: the unit is
+    // still emitted (identity exists) with empty signals (IP-5).
+    if (dir === null) continue;
     try {
-      enrichUnit(root, unit, 0, extraDiagnostics, depSideTable);
+      enrichUnit(effectiveRoot, unit, 0, extraDiagnostics, depSideTable, dir);
     } catch (error) {
       if (
         error instanceof RootNotFoundError ||
@@ -379,9 +596,106 @@ export async function map(
     merged.units
       .filter((unit) => unit.kind === "repo" && unit.ref === null)
       .map(async (unit) => {
-        unit.ref = await probeRef(path.join(root, unit.path));
+        // RED-97 (IP-6): probe at the member's actual disk location (local
+        // override honored); a forcibly-missing member keeps ref:null.
+        const dir = unitDiskDir(unit);
+        if (dir === null) return;
+        unit.ref = await probeRef(dir);
       }),
   );
+
+  // RED-97 (IP-5/IP-7, D-04): assembly-time drift checks. Emitted at ASSEMBLY
+  // — not resolution — so map()-from-inside-a-member and map()-at-root produce
+  // identical diagnostic sets (PMAP-010 byte-equivalence holds even for
+  // drifted platforms). Runs under the SEC-01 try/degrade discipline.
+  if (definition !== null) {
+    try {
+      const resolvedPlatformRoot = path.resolve(effectiveRoot);
+      for (const member of definition.members) {
+        const conventionalPath = member.path ?? member.name;
+        const dir = diskDirByName.has(member.name)
+          ? (diskDirByName.get(member.name) as string | null)
+          : path.join(effectiveRoot, conventionalPath);
+        if (dir === null || !isDirectory(dir)) {
+          // Listed-but-missing (conventional or overridden): the unit is
+          // still emitted — identity exists, location doesn't (IP-5).
+          extraDiagnostics.push(
+            missingMemberDiagnostic(member.name, conventionalPath),
+          );
+          continue;
+        }
+        const sniff = sniffPlatformFile(dir);
+        if (sniff.kind === "marker") {
+          if (sniff.marker.platform !== definition.name) {
+            extraDiagnostics.push(
+              markerNameMismatchDiagnostic(
+                member.name,
+                conventionalPath,
+                sniff.marker.platform,
+                definition.name,
+              ),
+            );
+          }
+          // The root hint is evaluated against the member's CONVENTIONAL
+          // path (pure path math) — a local relocation never changes the
+          // drift verdict, preserving IP-6 byte-identity.
+          const hint = sniff.marker.root ?? "..";
+          if (
+            path.resolve(resolvedPlatformRoot, conventionalPath, hint) !==
+            resolvedPlatformRoot
+          ) {
+            extraDiagnostics.push(
+              markerRootHintMismatchDiagnostic(
+                member.name,
+                conventionalPath,
+                hint,
+              ),
+            );
+          }
+        }
+        // No marker -> silent: absence is never a negative assertion
+        // (MODEL-02); a definition/config/malformed member file is that
+        // member's own standalone concern.
+      }
+
+      // D-04: enumerate platform-root child entries ONCE — a directory that
+      // is not a member path, honors no ignore glob, and holds no .git is
+      // surfaced as an info diagnostic (never silent). Dotdirs skipped;
+      // symlinks not followed (Dirent.isDirectory() is false for symlinks).
+      const memberTopSegments = new Set(
+        definition.members.map((m) => (m.path ?? m.name).split("/")[0]),
+      );
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(effectiveRoot, { withFileTypes: true });
+      } catch {
+        entries = [];
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith(".")) continue;
+        if (!entry.isDirectory()) continue;
+        if (memberTopSegments.has(entry.name)) continue;
+        if (
+          effectiveIgnore.length > 0 &&
+          matchGlob(effectiveIgnore, [entry.name]).matched.length > 0
+        ) {
+          continue;
+        }
+        if (fs.existsSync(path.join(effectiveRoot, entry.name, ".git"))) {
+          continue; // a .git child is the promotion gate's territory (D-04)
+        }
+        extraDiagnostics.push(nonRepoChildDiagnostic(entry.name));
+      }
+    } catch (error) {
+      if (
+        error instanceof RootNotFoundError ||
+        error instanceof MalformedConfigError
+      ) {
+        throw error;
+      }
+      extraDiagnostics.push(driftCheckFailureDiagnostic(error));
+    }
+  }
 
   // Overrides-honesty check (Assumption A3): an overrides key naming no
   // assembled unit is a stale mistake — warn + ignore (never throw). Valid
@@ -441,12 +755,18 @@ export async function map(
   applyRoles(merged.units, canonicalSide?.overrides);
 
   const pm: PlatformMap = {
-    // config.name is authoritative when present (CFG-01); else basename(root),
-    // which never leaks an absolute path — fall back to a fixed placeholder
-    // (never raw root) when basename is empty (errors.ts discipline).
-    name: canonicalSide?.name ?? (path.basename(root) || "(root)"),
-    root,
-    mode: detection.mode,
+    // config.name is authoritative when present (CFG-01) — for a platform
+    // definition that is the definition's name regardless of invocation dir
+    // (PMAP-010); else basename(root), which never leaks an absolute path —
+    // fall back to a fixed placeholder (never raw root) when basename is
+    // empty (errors.ts discipline).
+    name: canonicalSide?.name ?? (path.basename(effectiveRoot) || "(root)"),
+    // The (possibly re-anchored) root: the documented caller-anchor exception
+    // — equals the caller's own string whenever no re-anchor happened (IP-7).
+    root: effectiveRoot,
+    // A definition at the resolved root forces the platform shape (D-01):
+    // a platform root is multi-repo by declaration, not by sibling census.
+    mode: definition !== null ? "multi-repo" : detection.mode,
     units: merged.units,
     edges,
     diagnostics: [...merged.diagnostics, ...extraDiagnostics],
