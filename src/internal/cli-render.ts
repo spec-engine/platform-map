@@ -35,6 +35,9 @@ export interface Args {
   yes: boolean;
   help: boolean;
   version: boolean;
+  /** WR-03: containment boundary for platform resolution, threaded to
+   *  MapOptions.boundary. Unset → the library default (os.homedir()). */
+  boundary?: string;
   /** Set → dispatcher prints usage() to stderr and exits 1. */
   error?: string;
 }
@@ -66,13 +69,24 @@ export function parseArgs(argv: string[]): Args {
   };
   let sawDir = false;
   let optsEnded = false;
+  let pendingBoundary = false;
   for (const tok of argv) {
+    // A pending --boundary consumes the NEXT token verbatim as its value
+    // (even a dash-prefixed path) — checked before any flag parsing.
+    if (pendingBoundary) {
+      a.boundary = tok;
+      pendingBoundary = false;
+      continue;
+    }
     if (!optsEnded) {
       if (tok === "--") {
         optsEnded = true;
         continue;
       }
       switch (tok) {
+        case "--boundary":
+          pendingBoundary = true;
+          continue;
         case "--json":
           a.json = true;
           continue;
@@ -108,6 +122,9 @@ export function parseArgs(argv: string[]): Args {
       a.error = `unexpected argument: ${tok}`;
       return a;
     }
+  }
+  if (pendingBoundary) {
+    a.error = "missing value for --boundary";
   }
   return a;
 }
@@ -300,11 +317,15 @@ export function help(): string {
     "  platform-map init [dir]       write a proposed platform-map.json",
     "",
     "flags:",
-    "  --json        emit JSON instead of the human tree",
-    "  --dot         emit Graphviz DOT (graph only)",
-    "  --yes, -y     skip the confirmation prompt (init only)",
-    "  --help, -h    show this help and exit 0",
-    "  --version, -V print the version and exit 0",
+    "  --json            emit JSON instead of the human tree",
+    "  --dot             emit Graphviz DOT (graph only)",
+    "  --yes, -y         skip the confirmation prompt (init only)",
+    "  --boundary <dir>  containment boundary for upward platform resolution",
+    "                    and marker/override following (default: the home",
+    "                    directory); a definition at the invoked dir itself",
+    "                    is always honored",
+    "  --help, -h        show this help and exit 0",
+    "  --version, -V     print the version and exit 0",
     "",
   ].join("\n");
 }

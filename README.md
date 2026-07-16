@@ -155,10 +155,15 @@ map.
 directory it walks upward, following a member marker's root hint or stopping
 at a directory that holds a definition. The walk is bounded — it never
 ascends above `MapOptions.boundary` (default `os.homedir()`), and marker
-hints or local overrides that resolve outside the boundary become
-diagnostics (`UNIT_PATH_ESCAPE`, "escapes resolution boundary") and are
-never followed. A mapped root outside the boundary makes resolution inert —
-plain rung-1/2 behavior.
+hints or local overrides that physically resolve outside the boundary
+(symlinks included) become diagnostics (`UNIT_PATH_ESCAPE`, "escapes
+resolution boundary") and are never followed. The boundary governs the
+upward walk and marker/override following only: a definition at the invoked
+directory itself is always honored — pointing `map()` (or the CLI) directly
+at a platform root gets full rung-3 semantics even at `/tmp`, `/app`, or a
+CI workspace outside `$HOME`. From INSIDE a member outside the boundary,
+pass `--boundary <dir>` on the CLI (or `MapOptions.boundary`) to contain the
+walk there.
 
 At rung 3, member units always carry `sources: ["canonical"]` — a listed
 member is a canonically declared identity regardless of physical presence or

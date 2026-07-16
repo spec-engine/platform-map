@@ -263,8 +263,11 @@ export interface MapOptions extends DetectOptions {
   units?: Array<{ name: string; path: string; ref?: string }>;
   /** RED-97: the directory above which upward platform resolution never
    *  ascends and outside which marker/local-override resolution is never
-   *  followed. Default os.homedir(). A given root OUTSIDE the boundary makes
-   *  resolution inert (rung-1/2 behavior, byte-identical). */
+   *  PHYSICALLY followed (follow-targets are realpath'd — symlinks cannot
+   *  alias an outside dir). Default os.homedir(). WR-03: the boundary governs
+   *  the walk and follow-targets ONLY — a definition AT the invoked root is
+   *  always honored (full rung-3 semantics at /tmp, /app, CI workspaces);
+   *  the CLI threads this via `--boundary <dir>`. */
   boundary?: string;
 }
 export type AdapterName = "canonical" | "dark-factory" | "spec-engine" | "workspace" | "siblings";

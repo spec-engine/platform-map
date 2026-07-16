@@ -42,7 +42,7 @@ import type {
 } from "./adapters/index.js";
 import { PRECEDENCE, selectAdapters } from "./adapters/index.js";
 import { workspaceAdapter } from "./adapters/workspace.js";
-import { readCanonicalConfig, readLocalConfig } from "./config.js";
+import { readLocalConfig, readPlatformFile } from "./config.js";
 import { detect } from "./detect.js";
 import { buildEdges, populateDegrees } from "./edges.js";
 import { MalformedConfigError, RootNotFoundError } from "./errors.js";
@@ -392,9 +392,23 @@ export async function map(
   // side-channel; the two reads always agree (no writes, same process). When
   // the resolver already delivered the definition, it is threaded directly —
   // no re-read (IP-3).
-  const preConfig =
+  const preFile =
     canonicalEnabled && definition === null
-      ? readCanonicalConfig(effectiveRoot)
+      ? readPlatformFile(effectiveRoot)
+      : null;
+  if (preFile !== null && preFile.kind === "definition") {
+    // WR-03: a definition AT the invoked root is ALWAYS honored — the caller
+    // explicitly pointed map() here, the same trust as today's canonical
+    // config. The boundary governs the UPWARD WALK and marker/local-override
+    // follow-targets only, never a definition the caller aimed at directly —
+    // so a platform checked out at /tmp, /app, or a CI workspace outside
+    // $HOME gets full rung-3 semantics (mode forcing, scanRoot ".", member
+    // filtering, drift checks, local overrides), not a half-applied hybrid.
+    definition = preFile.definition;
+  }
+  const preConfig =
+    preFile !== null && (preFile.kind === "config" || preFile.kind === "marker")
+      ? preFile.config
       : null;
   const effectiveIgnore = [
     ...(opts.ignore ?? []),

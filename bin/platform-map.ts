@@ -30,11 +30,17 @@ import {
   toDot,
   usage,
 } from "../src/internal/cli-render.js";
-import type { Detection, PlatformMap } from "../src/types.js";
+import type { Detection, MapOptions, PlatformMap } from "../src/types.js";
 
 // Build-time-injected version constant (tsdown `define`); declared so
 // `tsc --noEmit` type-checks without a runtime package.json read (D-04).
 declare const __CLI_VERSION__: string;
+
+/** WR-03: threads the optional --boundary flag into MapOptions — omitted, the
+ *  library default (os.homedir()) applies. */
+function mapOptions(boundary: string | undefined): MapOptions {
+  return boundary === undefined ? {} : { boundary };
+}
 
 /** One diagnostic message per line → stderr (human mode only; --json embeds them). */
 function writeDiagnostics(pm: PlatformMap): void {
@@ -189,7 +195,7 @@ async function main(): Promise<number> {
         // graph ran map() → diagnostics route to stderr and exitFor(pm) sets the
         // code. --dot emits DOT; otherwise the {nodes,edges,roots,leaves,cycles}
         // projection. Both render from serialize(pm)/graph(pm) — the CLI never sorts.
-        const pm = await map(a.dir);
+        const pm = await map(a.dir, mapOptions(a.boundary));
         process.stdout.write(
           `${a.dot ? toDot(pm) : JSON.stringify(graphProjection(pm), null, 2)}\n`,
         );
@@ -202,7 +208,7 @@ async function main(): Promise<number> {
       }
       default: {
         // default (map) path.
-        const pm = await map(a.dir);
+        const pm = await map(a.dir, mapOptions(a.boundary));
         if (a.json) {
           // --json: deterministic toJSON to stdout, NOTHING to stderr (SC2).
           process.stdout.write(`${toJSON(pm)}\n`);

@@ -477,6 +477,34 @@ test("listed-but-missing member -> unit still emitted (identity exists) + PLATFO
   }
 });
 
+test("WR-03: a definition at the INVOKED root is honored regardless of boundary (full rung-3 semantics outside $HOME)", async () => {
+  const parent = mktree();
+  try {
+    const plat = buildPlatform(parent);
+    // NO boundary option: the tmpdir fixture is outside os.homedir(), so the
+    // upward walk is inert — but the caller pointed map() directly at the
+    // definition, which is always honored (same trust as a canonical config).
+    const pm = await map(plat);
+    assert.equal(pm.mode, "multi-repo");
+    assert.equal(pm.name, "acme");
+    assert.deepEqual(
+      pm.units.map((u) => u.name),
+      ["mono-lib", "plain-svc"],
+    );
+    assert.ok(pm.diagnostics.some((d) => d.code === "UNCONFIGURED_SIBLING"));
+    assert.ok(
+      pm.diagnostics.some(
+        (d) => d.code === "PLATFORM_DRIFT" && d.severity === "info",
+      ),
+    );
+    // byte-identical to the same tree mapped with an explicit boundary
+    assert.equal(toJSON(pm), toJSON(await map(plat, { boundary: parent })));
+    assert.equal(toJSON(await map(plat)), toJSON(await map(plat)));
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("malformed platform-map.local.json -> MALFORMED_CONFIG warning, never a throw (per-user state cannot brick the map)", async () => {
   const parent = mktree();
   try {
