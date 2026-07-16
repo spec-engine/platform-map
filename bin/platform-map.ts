@@ -119,10 +119,30 @@ async function runPlatformInit(
   );
   if (gate !== null) return gate;
   for (const f of plan) {
-    fs.writeFileSync(
-      path.join(dir, ...f.path.split("/")),
-      `${JSON.stringify(f.content, null, 2)}\n`,
-    );
+    // WR-04: the plan-time existsSync gate is advisory (a file can appear
+    // during the unbounded interactive prompt) — the exclusive "wx" flag
+    // makes refuse-if-exists ATOMIC at write time. EEXIST on the root file
+    // refuses the whole init (it is written first, so nothing precedes it);
+    // EEXIST on a member marker is the per-file skip.
+    try {
+      fs.writeFileSync(
+        path.join(dir, ...f.path.split("/")),
+        `${JSON.stringify(f.content, null, 2)}\n`,
+        { flag: "wx" },
+      );
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+        if (f.path === "platform-map.json") {
+          process.stderr.write(
+            "platform-map: platform-map.json already exists; refusing to overwrite\n",
+          );
+          return 1;
+        }
+        process.stderr.write(`platform-map: ${f.path} exists; skipping\n`);
+        continue;
+      }
+      throw e;
+    }
     process.stderr.write(`platform-map: wrote ${f.path}\n`);
   }
   return 0;
@@ -164,7 +184,19 @@ async function runInit(dir: string, yes: boolean): Promise<number> {
   process.stdout.write(`${text}\n`);
   const gate = await confirmWrite(yes, "Write platform-map.json? [y/N] ");
   if (gate !== null) return gate;
-  fs.writeFileSync(configPath, `${text}\n`); // the rung-1/2 single write (SEC-05)
+  // WR-04: exclusive flag — a file created during the prompt window is never
+  // clobbered; the early existsSync refusal above stays for pre-prompt UX.
+  try {
+    fs.writeFileSync(configPath, `${text}\n`, { flag: "wx" }); // the rung-1/2 single write (SEC-05)
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+      process.stderr.write(
+        "platform-map: platform-map.json already exists; refusing to overwrite\n",
+      );
+      return 1;
+    }
+    throw e;
+  }
   process.stderr.write("platform-map: wrote platform-map.json\n");
   return 0;
 }
