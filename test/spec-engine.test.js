@@ -3,9 +3,9 @@
 // Phase-2 test-build seam). Verifies: a member.json sets hasSpecEngineConfig;
 // a `members` glob expands into sub-member units with platform-relative names;
 // glob matches that are files or a basename `spec-engine` dir are skipped;
-// `ignore` excludes a sub-member; a malformed member config degrades to a
-// MALFORMED_CONFIG diagnostic (never throws); and an expanded path escaping the
-// root is dropped (SEC-02). The file-skip / spec-engine-skip / SEC-02 branches
+// `ignore` NEVER filters expansion (RED-108 AC4 — scan-only, SE parity); a
+// malformed member config degrades to a MALFORMED_CONFIG diagnostic (never
+// throws); and an expanded path escaping the root is dropped (SEC-02). The file-skip / spec-engine-skip / SEC-02 branches
 // use the adapter's TEST-ONLY `deps` seam (mirrors the workspace adapter); the
 // happy-path expansion runs against a real temp-dir tree. The SE-platform e2e
 // lives in map.test.js.
@@ -132,15 +132,18 @@ test("specEngineAdapter skips a glob match that is a file or a spec-engine dir",
   }
 });
 
-// ── `ignore` excludes a matched sub-member ─────────────────────────────────
+// ── RED-108 (AC4): `ignore` NEVER filters expansion — scan-only, SE parity ──
 
-test("specEngineAdapter excludes an ignored sub-member (by basename)", () => {
+test("specEngineAdapter emits every matched sub-member regardless of the ignore array (RED-108 AC4)", () => {
   const root = mkTempDir();
   try {
     writeMember(root, {
       specs: "spec-engine@3",
       members: "packages/*",
-      ignore: ["cli"],
+      // Basename, rel-path, and glob forms — none of them may filter
+      // expansion: SE's expandWorkspaceMembers takes no ignore parameter,
+      // and the member config's ignore is a tag-scan hint, not membership.
+      ignore: ["cli", "packages/engine", "packages/*"],
     });
     const result = specEngineAdapter(root, STUB_CTX, {
       walk: () => ({
@@ -151,63 +154,13 @@ test("specEngineAdapter excludes an ignored sub-member (by basename)", () => {
     });
     const subs = result.partialUnits.filter((u) => u.path !== ".");
     assert.deepEqual(
-      subs.map((u) => u.path),
-      ["packages/engine"],
+      subs.map((u) => u.path).sort(),
+      ["packages/cli", "packages/engine"],
+      "the ignore array is discarded — both sub-members are emitted",
     );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-// ── WR-02: `ignore` is matched as a GLOB, not just an exact string ──────────
-
-test("specEngineAdapter excludes sub-members via a documented ignore glob (WR-02)", () => {
-  const root = mkTempDir();
-  try {
-    writeMember(root, {
-      specs: "spec-engine@3",
-      members: "packages/*",
-      // A documented glob form — must actually exclude, not silently no-op.
-      ignore: ["packages/cli"],
-    });
-    const result = specEngineAdapter(root, STUB_CTX, {
-      walk: () => ({
-        entries: ["packages/engine", "packages/cli"],
-        diagnostics: [],
-      }),
-      isDir: () => true,
-    });
-    const subs = result.partialUnits.filter((u) => u.path !== ".");
-    assert.deepEqual(
-      subs.map((u) => u.path),
-      ["packages/engine"],
-      "the 'packages/*'-shaped ignore glob excludes packages/cli",
-    );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("specEngineAdapter still honors an exact-name ignore as a glob subset (WR-02)", () => {
-  const root = mkTempDir();
-  try {
-    writeMember(root, {
-      specs: "spec-engine@3",
-      members: "packages/*",
-      ignore: ["engine"], // exact basename — a literal is a glob that matches itself
-    });
-    const result = specEngineAdapter(root, STUB_CTX, {
-      walk: () => ({
-        entries: ["packages/engine", "packages/cli"],
-        diagnostics: [],
-      }),
-      isDir: () => true,
-    });
-    const subs = result.partialUnits.filter((u) => u.path !== ".");
-    assert.deepEqual(
-      subs.map((u) => u.path),
-      ["packages/cli"],
-    );
+    // The ignore entries never leak into any unit or signal either.
+    const serialized = JSON.stringify(result.partialUnits);
+    assert.equal(/tag-scan|"ignore"/.test(serialized), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
