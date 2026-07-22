@@ -18,7 +18,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { detect, RootNotFoundError } from "../dist/index.mjs";
-import { scanSiblings } from "../dist/internal/scan.mjs";
+import { looksLikeRepoRoot, scanSiblings } from "../dist/internal/scan.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(here, "fixtures");
@@ -288,6 +288,77 @@ test("scanSiblings excludes siblings via an ignore glob and keeps exact-name ign
       exact.siblings.map((s) => s.name).sort(),
       ["tmp-repo", "web-repo"],
       "an exact-name ignore excludes only that entry (glob subset)",
+    );
+  } finally {
+    rmTempDir(tempRoot);
+  }
+});
+
+// ── RED-108: sibling-candidate predicate + RUNG1-02 repo-root parity ────────
+
+test("looksLikeRepoRoot accepts .git dir, .git file, or package.json; rejects plain dirs (RED-108)", () => {
+  const tempRoot = mkTempDir();
+  try {
+    const gitDir = path.join(tempRoot, "git-dir");
+    fs.mkdirSync(gitDir);
+    mkGitMarker(gitDir);
+
+    // Submodule/worktree shape: .git is a FILE (gitlink), not a directory.
+    const gitFile = path.join(tempRoot, "git-file");
+    fs.mkdirSync(gitFile);
+    fs.writeFileSync(path.join(gitFile, ".git"), "gitdir: ../elsewhere\n");
+
+    const pkgOnly = path.join(tempRoot, "pkg-only");
+    fs.mkdirSync(pkgOnly);
+    fs.writeFileSync(path.join(pkgOnly, "package.json"), "{}");
+
+    const plain = path.join(tempRoot, "plain");
+    fs.mkdirSync(plain);
+    fs.writeFileSync(path.join(plain, "notes.md"), "");
+
+    assert.equal(looksLikeRepoRoot(gitDir), true);
+    assert.equal(looksLikeRepoRoot(gitFile), true);
+    assert.equal(looksLikeRepoRoot(pkgOnly), true);
+    assert.equal(looksLikeRepoRoot(plain), false);
+  } finally {
+    rmTempDir(tempRoot);
+  }
+});
+
+test("scanSiblings default gate stays .git-only; injected looksLikeRepoRoot widens to package.json (RED-108)", () => {
+  const tempRoot = mkTempDir();
+  try {
+    const gitSib = path.join(tempRoot, "git-sib");
+    fs.mkdirSync(gitSib);
+    mkGitMarker(gitSib);
+
+    const pkgSib = path.join(tempRoot, "pkg-sib");
+    fs.mkdirSync(pkgSib);
+    fs.writeFileSync(path.join(pkgSib, "package.json"), "{}");
+
+    const plain = path.join(tempRoot, "plain");
+    fs.mkdirSync(plain);
+
+    const names = ["git-sib", "pkg-sib", "plain"];
+
+    // Default predicate: 0.1.0 behavior byte-preserved — .git children only.
+    const dflt = scanSiblings(tempRoot, ".", undefined, () => names);
+    assert.deepEqual(
+      dflt.siblings.map((s) => s.name),
+      ["git-sib"],
+    );
+
+    // Widened predicate: package.json-only children qualify; plain dirs never do.
+    const widened = scanSiblings(
+      tempRoot,
+      ".",
+      undefined,
+      () => names,
+      looksLikeRepoRoot,
+    );
+    assert.deepEqual(
+      widened.siblings.map((s) => s.name),
+      ["git-sib", "pkg-sib"],
     );
   } finally {
     rmTempDir(tempRoot);
