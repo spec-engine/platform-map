@@ -226,6 +226,32 @@ listing and prompt go to stderr. `init` never overwrites: if the root
 that one file is skipped with a note and the rest are still written. It
 never writes `platform-map.local.json` and never touches `.gitignore`.
 
+## Spec Engine platforms
+
+A directory carrying a canonical `spec-engine/` dir is a platform by Spec
+Engine's own declaration — no `platform-map.json` required. `map(platformDir)`
+classifies the platform's **children** with SE's three-bucket contract:
+
+1. A child carrying `spec-engine.member.json` is a **confirmed member** —
+   config presence alone confirms it (no `.git` or `package.json` needed).
+   A config with a `members` glob expands into `<child>/<rel>` sub-units.
+   A member with a `.git` entry (dir or file) is `kind: "repo"`; a bare
+   config member is `kind: "workspace-package"` and is never git-probed.
+2. An unconfigured child that looks like a repo root — `.git` (dir or file)
+   **or** `package.json` — yields an `UNCONFIGURED_SIBLING` diagnostic (the
+   signal SE derives `NO_SPEC_CONFIG` from).
+3. A plain folder (`docs/`, `src/`, …) is silent: no unit, no diagnostic.
+
+Precedence: a `platform-map.json` of any shape at the root always wins over
+the convention; disabling the spec-engine adapter
+(`adapters: { "spec-engine": false }`) disables the mode entirely.
+
+**Ignore semantics (normative):** the member config's `ignore` array is an SE
+tag-scan hint and **never filters `members`-glob expansion** — matching SE's
+engine exactly. The caller-level `MapOptions.ignore` filters child
+*enumeration* only (which directories are considered at all), never expansion
+inside a member.
+
 ## Detection flavor precedence
 
 Workspace-manifest detection probes, in order: **pnpm-workspace.yaml** >
