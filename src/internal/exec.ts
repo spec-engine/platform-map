@@ -69,7 +69,14 @@ export function boundedExec(
     }, timeoutMs);
 
     child.stdout?.on("data", (d: Buffer) => {
-      if (out.length < MAX_STDOUT_BYTES) out += d;
+      // WR-03: the chunk that crosses the cap is TRUNCATED, not appended
+      // whole — pipe chunk sizes are platform-dependent (Linux delivers
+      // bigger chunks than macOS), so an append-then-stop cap overshoots by
+      // up to one chunk on some platforms and made the capped length
+      // environment-dependent.
+      if (out.length < MAX_STDOUT_BYTES) {
+        out = (out + d).slice(0, MAX_STDOUT_BYTES);
+      }
     });
 
     child.on("close", (code) => {
