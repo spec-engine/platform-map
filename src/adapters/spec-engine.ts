@@ -45,7 +45,9 @@ import { walk } from "../internal/walk.js";
 import type { Diagnostic, UnitSignals } from "../types.js";
 import type { AdapterContext, AdapterResult, PartialUnit } from "./index.js";
 
-const MEMBER_CONFIG = "spec-engine.member.json";
+/** The SE member-config filename — map()'s SE-platform sibling filter reuses
+ *  it so "config-carrying" means the same file on both sides (RED-108). */
+export const MEMBER_CONFIG = "spec-engine.member.json";
 const SE_MAX_DEPTH = 16;
 const SE_MAX_ENTRIES = 10000;
 

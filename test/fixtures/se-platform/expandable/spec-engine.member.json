@@ -1,0 +1,5 @@
+{
+  "specs": "spec-engine@2",
+  "members": "packages/*",
+  "ignore": ["packages/cli"]
+}

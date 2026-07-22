@@ -93,7 +93,7 @@ test("map() is byte-identical across two runs and unit names are globally unique
 test("map() performs no filesystem writes on the mapped tree (PMAP-005 no-write audit)", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-nowrite-"));
   try {
-    for (const fixture of ["single-repo", "monorepo-pnpm"]) {
+    for (const fixture of ["single-repo", "monorepo-pnpm", "se-platform"]) {
       const copyDir = path.join(tmp, fixture);
       fs.cpSync(path.join(fixturesDir, fixture), copyDir, { recursive: true });
 
