@@ -18,7 +18,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { specEngineAdapter } from "../dist/adapters/spec-engine.mjs";
+import {
+  specEngineAdapter,
+  specEnginePlatform,
+} from "../dist/adapters/spec-engine.mjs";
 
 const STUB_CTX = {
   detection: { mode: "single-repo" },
@@ -207,6 +210,154 @@ test("specEngineAdapter degrades a malformed member config to a MALFORMED_CONFIG
     });
     assert.deepEqual(result.partialUnits, []);
     assert.ok(result.diagnostics.some((d) => d.code === "MALFORMED_CONFIG"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── RED-108: specEnginePlatform — per-child classification ──────────────────
+
+test("specEnginePlatform classifies config-carrying children and re-anchors expansion (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    // The canonical dir itself must never become a unit, even config-carrying.
+    fs.mkdirSync(path.join(root, "spec-engine"));
+    writeMember(path.join(root, "spec-engine"), { specs: "spec-engine@1" });
+
+    // Bare config-carrying member (the SE fixture shape: no .git, no package.json).
+    fs.mkdirSync(path.join(root, "admin"));
+    writeMember(path.join(root, "admin"), { specs: "spec-engine@2" });
+
+    // Expanding member: config + members glob + real package dirs.
+    fs.mkdirSync(path.join(root, "expandable", "packages", "engine"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(root, "expandable", "packages", "cli"), {
+      recursive: true,
+    });
+    writeMember(path.join(root, "expandable"), {
+      specs: "spec-engine@2",
+      members: "packages/*",
+      ignore: ["packages/cli"], // AC4: never filters expansion
+    });
+
+    // Plain folder (no config) and unconfigured repo-root child: neither is
+    // this function's job — both are skipped here (siblings/merge own them).
+    fs.mkdirSync(path.join(root, "docs"));
+    fs.mkdirSync(path.join(root, "rogue"));
+    fs.mkdirSync(path.join(root, "rogue", ".git"));
+
+    const result = specEnginePlatform(root, STUB_CTX);
+
+    const byName = Object.fromEntries(
+      result.partialUnits.map((u) => [u.name, u]),
+    );
+    assert.deepEqual(Object.keys(byName).sort(), [
+      "admin",
+      "expandable",
+      "expandable/packages/cli",
+      "expandable/packages/engine",
+    ]);
+    assert.equal(byName.admin.path, "admin");
+    assert.equal(byName.admin.kind, "workspace-package");
+    assert.equal(byName.admin.signals.hasSpecEngineConfig, true);
+    assert.equal(byName.expandable.path, "expandable");
+    assert.equal(
+      byName["expandable/packages/engine"].path,
+      "expandable/packages/engine",
+    );
+    assert.equal(
+      byName["expandable/packages/cli"].path,
+      "expandable/packages/cli",
+      "AC4: the member config's ignore never filters expansion",
+    );
+    assert.deepEqual(result.edges, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEnginePlatform child kind is repo iff the child has a .git dir or file (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    fs.mkdirSync(path.join(root, "git-dir"));
+    fs.mkdirSync(path.join(root, "git-dir", ".git"));
+    writeMember(path.join(root, "git-dir"), { specs: "spec-engine@2" });
+
+    fs.mkdirSync(path.join(root, "git-file"));
+    fs.writeFileSync(
+      path.join(root, "git-file", ".git"),
+      "gitdir: ../elsewhere\n",
+    );
+    writeMember(path.join(root, "git-file"), { specs: "spec-engine@2" });
+
+    fs.mkdirSync(path.join(root, "bare"));
+    writeMember(path.join(root, "bare"), { specs: "spec-engine@2" });
+
+    const result = specEnginePlatform(root, STUB_CTX);
+    const kinds = Object.fromEntries(
+      result.partialUnits.map((u) => [u.name, u.kind]),
+    );
+    assert.deepEqual(kinds, {
+      "git-dir": "repo",
+      "git-file": "repo",
+      bare: "workspace-package",
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEnginePlatform re-anchors a malformed child config's diagnostic locus and never throws (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    fs.mkdirSync(path.join(root, "admin"));
+    writeMember(path.join(root, "admin"), "{ not valid json ");
+
+    let result;
+    assert.doesNotThrow(() => {
+      result = specEnginePlatform(root, STUB_CTX);
+    });
+    // Config-carrying but malformed: diagnostic with a platform-relative
+    // locus, no unit (matches the adapter's own root behavior).
+    assert.deepEqual(result.partialUnits, []);
+    assert.equal(result.diagnostics.length, 1);
+    assert.equal(result.diagnostics[0].code, "MALFORMED_CONFIG");
+    assert.equal(result.diagnostics[0].path, "admin/spec-engine.member.json");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEnginePlatform filters child enumeration by ctx.ignore and guards hostile readdir names (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    fs.mkdirSync(path.join(root, "admin"));
+    writeMember(path.join(root, "admin"), { specs: "spec-engine@2" });
+    fs.mkdirSync(path.join(root, "vendored"));
+    writeMember(path.join(root, "vendored"), { specs: "spec-engine@2" });
+
+    const ignored = specEnginePlatform(root, {
+      ...STUB_CTX,
+      ignore: ["vendored"],
+    });
+    assert.deepEqual(
+      ignored.partialUnits.map((u) => u.name),
+      ["admin"],
+      "opts.ignore filters CHILD ENUMERATION (never expansion)",
+    );
+
+    const hostile = specEnginePlatform(root, STUB_CTX, {
+      readdir: () => ["admin", "x/../../../../etc"],
+    });
+    assert.deepEqual(
+      hostile.partialUnits.map((u) => u.name),
+      ["admin"],
+    );
+    assert.ok(
+      hostile.diagnostics.some((d) => d.code === "UNIT_PATH_ESCAPE"),
+      "a readdir entry smuggling .. segments is dropped with UNIT_PATH_ESCAPE",
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
