@@ -183,6 +183,32 @@ test("a platform-map.json definition wins over the spec-engine/ convention (RED-
   }
 });
 
+test("a unit-config platform-map.json also suppresses the spec-engine/ convention (RED-108 precedence)", async () => {
+  const parent = mktree();
+  try {
+    const plat = path.join(parent, "plat");
+    writeJson(path.join(plat, "spec-engine", "AUTH", "SPEC.json"), {
+      domain: "AUTH",
+      spec_version: 1,
+      requirements: [],
+    });
+    // A unit-level config (no `members`, no `platform` key): platform-map.json
+    // of ANY shape is canonical — the spec-engine/ convention must stay inert.
+    writeJson(path.join(plat, "platform-map.json"), { name: "custom" });
+    writeMember(path.join(plat, "admin"), { specs: "spec-engine@2" });
+
+    const pm = await map(plat, { boundary: parent });
+
+    assert.equal(pm.name, "custom"); // config name, not basename
+    assert.ok(pm.units.every((u) => u.name !== "admin"));
+    assert.ok(pm.units.every((u) => !u.sources?.includes("spec-engine")));
+    assert.notEqual(pm.mode, "multi-repo");
+    assert.ok(!pm.diagnostics.some((d) => d.code === "UNCONFIGURED_SIBLING"));
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("disabling the spec-engine adapter disables SE-platform mode entirely (RED-108, CFG-09)", async () => {
   const parent = mktree();
   try {

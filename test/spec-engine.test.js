@@ -215,6 +215,26 @@ test("specEngineAdapter degrades a malformed member config to a MALFORMED_CONFIG
   }
 });
 
+test("specEngineAdapter degrades a valid-JSON-but-non-object member config the same way", () => {
+  const root = mkTempDir();
+  try {
+    // Parses fine, but is not a JSON object — the other malformed branch.
+    for (const content of ["[]", "42", "null"]) {
+      writeMember(root, content);
+      let result;
+      assert.doesNotThrow(() => {
+        result = specEngineAdapter(root, STUB_CTX);
+      });
+      assert.deepEqual(result.partialUnits, [], content);
+      assert.equal(result.diagnostics.length, 1, content);
+      assert.equal(result.diagnostics[0].code, "MALFORMED_CONFIG", content);
+      assert.match(result.diagnostics[0].message, /not a JSON object/, content);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // ── RED-108: specEnginePlatform — per-child classification ──────────────────
 
 test("specEnginePlatform classifies config-carrying children and re-anchors expansion (RED-108)", () => {
