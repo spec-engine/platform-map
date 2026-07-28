@@ -35,6 +35,24 @@ function existsAt(entryPath: string, name: string): boolean {
   }
 }
 
+/** The default sibling-candidate gate: a `.git` directory or file (a plain
+ *  clone, or a submodule/worktree gitlink). This is the 0.1.0 behavior and
+ *  stays the default for every scan that does not opt into a wider signal. */
+function hasGitEntry(absEntryPath: string): boolean {
+  return existsAt(absEntryPath, ".git");
+}
+
+/**
+ * RED-108: repo-root signal with Spec Engine RUNG1-02 parity — `.git` (dir or
+ * file) OR `package.json`. The marker set is deliberately this small so a
+ * platform root's plain folders (src/, docs/, notes/) never qualify as
+ * candidates. Used only by map()'s SE-platform child scan; the default
+ * parent-oriented scan stays `.git`-only.
+ */
+export function looksLikeRepoRoot(absDir: string): boolean {
+  return existsAt(absDir, ".git") || existsAt(absDir, "package.json");
+}
+
 // WR-02: `ignore` is documented as GLOBS (types.ts), so match each candidate
 // through the zero-dep, ReDoS-safe `matchGlob` rather than exact-string
 // `includes`. A literal with no wildcard chars still matches itself, so exact
@@ -66,7 +84,9 @@ function compareByName(a: Sibling, b: Sibling): number {
  * would reject every real sibling by construction). An escaping entry is
  * dropped with a UNIT_PATH_ESCAPE diagnostic and never entered (SEC-02).
  * The platform root's own entry is excluded from its own sibling list
- * (CR-02). Only entries with a `.git` directory or file are kept. Returned
+ * (CR-02). Only entries passing `isCandidate` are kept — the default is the
+ * `.git`-dir-or-file gate (0.1.0 behavior); map()'s SE-platform child scan
+ * passes `looksLikeRepoRoot` for RUNG1-02 parity (RED-108). Returned
  * siblings are always sorted by `name` (sort-at-construction) so output is
  * identical regardless of the underlying directory-listing order.
  */
@@ -75,6 +95,7 @@ export function scanSiblings(
   scanRoot: string,
   ignore: string[] | undefined,
   readdir: (dir: string) => string[] = defaultReaddir,
+  isCandidate: (absEntryPath: string) => boolean = hasGitEntry,
 ): { siblings: Sibling[]; diagnostics: Diagnostic[] } {
   const resolvedScanRoot = path.resolve(platformRoot, scanRoot);
   const resolvedPlatformRoot = path.resolve(platformRoot);
@@ -108,7 +129,7 @@ export function scanSiblings(
     // includes root's own basename (CR-02).
     if (absoluteEntryPath === resolvedPlatformRoot) continue;
 
-    if (!existsAt(absoluteEntryPath, ".git")) continue;
+    if (!isCandidate(absoluteEntryPath)) continue;
 
     siblings.push({
       name,

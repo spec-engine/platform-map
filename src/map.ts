@@ -41,6 +41,7 @@ import type {
   PartialUnit,
 } from "./adapters/index.js";
 import { PRECEDENCE, selectAdapters } from "./adapters/index.js";
+import { MEMBER_CONFIG, specEnginePlatform } from "./adapters/spec-engine.js";
 import { workspaceAdapter } from "./adapters/workspace.js";
 import { readLocalConfig, readPlatformFile } from "./config.js";
 import { detect } from "./detect.js";
@@ -54,6 +55,7 @@ import {
   sniffPlatformFile,
 } from "./internal/platform-root.js";
 import { probeRef } from "./internal/ref-probe.js";
+import { looksLikeRepoRoot, scanSiblings } from "./internal/scan.js";
 import { canonicalCycles } from "./internal/scc.js";
 import { serialize } from "./internal/serialize.js";
 import { merge } from "./merge.js";
@@ -417,6 +419,24 @@ export async function map(
       : (preConfig?.ignore ?? [])),
   ];
 
+  // RED-108: SE-platform discovery mode. A directory carrying a canonical
+  // `spec-engine/` dir — and NO platform-map.json of any shape at the
+  // (possibly re-anchored) root — is a platform by Spec Engine's own
+  // declaration (SE's assertSpecPlatform contract), so map() classifies its
+  // CHILDREN: the spec-engine adapter is swapped for its per-child variant,
+  // the sibling scan runs at "." with RUNG1-02 repo-root parity, and the
+  // merge promotion gate treats per-child member configs as the confirming
+  // config. A platform-map.json always wins (canonical over convention); a
+  // disabled canonical adapter never reads the file (CFG-09), so preConfig
+  // is null and the convention may fire — consistent with that toggle. No
+  // upward walk happens for SE mode: SE's own contract points at the
+  // platform dir explicitly.
+  const sePlatform =
+    opts.adapters?.["spec-engine"] !== false &&
+    definition === null &&
+    preConfig === null &&
+    isDirectory(path.join(effectiveRoot, "spec-engine"));
+
   // detect() is the throwing gate: it performs the nonexistent-root check and
   // throws RootNotFoundError (SEC-01) before any adapter runs. With a
   // definition at the (possibly re-anchored) root, scanRoot is forced to "."
@@ -425,7 +445,7 @@ export async function map(
   // .git children come out as UNCONFIGURED_SIBLING with zero merge changes
   // (D-04, IP-3).
   const detection = detect(effectiveRoot, {
-    scanRoot: definition !== null ? "." : opts.scanRoot,
+    scanRoot: definition !== null || sePlatform ? "." : opts.scanRoot,
     ignore: effectiveIgnore,
   });
 
@@ -445,6 +465,33 @@ export async function map(
     );
   }
 
+  // RED-108: SE mode re-runs the child scan with the WIDENED candidate gate
+  // (looksLikeRepoRoot: .git dir-or-file OR package.json — RUNG1-02 parity),
+  // replacing detect()'s .git-only list. Config-carrying children are
+  // confirmed member IDENTITIES, not candidates — dropped here exactly like
+  // definition-mode listed members above, so only unconfigured repo-root
+  // children reach the promotion gate (-> UNCONFIGURED_SIBLING, SE's
+  // NO_SPEC_CONFIG bucket). The `spec-engine` dir itself is excluded
+  // defensively (it can never be a member). The array is ALWAYS materialized
+  // (even empty) so the siblings adapter reuses this scan and never falls
+  // back to its own ".." parent scan. Scan diagnostics are dropped, same as
+  // detect()'s own treatment of them (they only arise from a hostile
+  // injected readdir seam, impossible with the real fs).
+  if (sePlatform) {
+    const { siblings } = scanSiblings(
+      effectiveRoot,
+      ".",
+      effectiveIgnore,
+      undefined,
+      looksLikeRepoRoot,
+    );
+    detection.siblings = siblings.filter(
+      (s) =>
+        s.name !== "spec-engine" &&
+        !fs.existsSync(path.join(effectiveRoot, s.path, MEMBER_CONFIG)),
+    );
+  }
+
   const ctx: AdapterContext = {
     detection,
     ignore: effectiveIgnore,
@@ -455,6 +502,12 @@ export async function map(
   const adapterByName = new Map<AdapterName, Adapter>(
     selected.map((s): [AdapterName, Adapter] => [s.source, s.adapter]),
   );
+  // RED-108: in SE-platform mode the per-child variant runs at the SAME
+  // spec-engine precedence rank (the registry itself never selects it). The
+  // gate already required the adapter to be enabled.
+  if (sePlatform) {
+    adapterByName.set("spec-engine", specEnginePlatform);
+  }
 
   const results: Array<{
     source: AdapterName | "caller";
@@ -520,8 +573,10 @@ export async function map(
   }
 
   // Promotion gate ("detection proposes, config disposes"): declared units[]
-  // turns unconfirmed siblings into UNCONFIGURED_SIBLING diagnostics.
-  const merged = merge(results, canonicalSide?.declaredUnits ?? false);
+  // turns unconfirmed siblings into UNCONFIGURED_SIBLING diagnostics. In SE
+  // mode the disposing config is per-child member.json presence (RED-108,
+  // AC3) — never a fake side-channel, which would also hijack pm.name.
+  const merged = merge(results, canonicalSide?.declaredUnits ?? sePlatform);
 
   // RED-97 (IP-6, D-02): per-user local disk-location overrides. Read ONLY
   // when a definition is present at the resolved root — rungs 1/2 never touch
@@ -783,7 +838,9 @@ export async function map(
     root: effectiveRoot,
     // A definition at the resolved root forces the platform shape (D-01):
     // a platform root is multi-repo by declaration, not by sibling census.
-    mode: definition !== null ? "multi-repo" : detection.mode,
+    // An SE platform is likewise multi-repo by declaration — the canonical
+    // spec-engine/ dir IS the declaration (RED-108).
+    mode: definition !== null || sePlatform ? "multi-repo" : detection.mode,
     units: merged.units,
     edges,
     diagnostics: [...merged.diagnostics, ...extraDiagnostics],

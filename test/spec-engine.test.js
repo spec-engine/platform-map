@@ -3,9 +3,9 @@
 // Phase-2 test-build seam). Verifies: a member.json sets hasSpecEngineConfig;
 // a `members` glob expands into sub-member units with platform-relative names;
 // glob matches that are files or a basename `spec-engine` dir are skipped;
-// `ignore` excludes a sub-member; a malformed member config degrades to a
-// MALFORMED_CONFIG diagnostic (never throws); and an expanded path escaping the
-// root is dropped (SEC-02). The file-skip / spec-engine-skip / SEC-02 branches
+// `ignore` NEVER filters expansion (RED-108 AC4 — scan-only, SE parity); a
+// malformed member config degrades to a MALFORMED_CONFIG diagnostic (never
+// throws); and an expanded path escaping the root is dropped (SEC-02). The file-skip / spec-engine-skip / SEC-02 branches
 // use the adapter's TEST-ONLY `deps` seam (mirrors the workspace adapter); the
 // happy-path expansion runs against a real temp-dir tree. The SE-platform e2e
 // lives in map.test.js.
@@ -18,7 +18,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { specEngineAdapter } from "../dist/adapters/spec-engine.mjs";
+import {
+  specEngineAdapter,
+  specEnginePlatform,
+} from "../dist/adapters/spec-engine.mjs";
 
 const STUB_CTX = {
   detection: { mode: "single-repo" },
@@ -132,15 +135,18 @@ test("specEngineAdapter skips a glob match that is a file or a spec-engine dir",
   }
 });
 
-// ── `ignore` excludes a matched sub-member ─────────────────────────────────
+// ── RED-108 (AC4): `ignore` NEVER filters expansion — scan-only, SE parity ──
 
-test("specEngineAdapter excludes an ignored sub-member (by basename)", () => {
+test("specEngineAdapter emits every matched sub-member regardless of the ignore array (RED-108 AC4)", () => {
   const root = mkTempDir();
   try {
     writeMember(root, {
       specs: "spec-engine@3",
       members: "packages/*",
-      ignore: ["cli"],
+      // Basename, rel-path, and glob forms — none of them may filter
+      // expansion: SE's expandWorkspaceMembers takes no ignore parameter,
+      // and the member config's ignore is a tag-scan hint, not membership.
+      ignore: ["cli", "packages/engine", "packages/*"],
     });
     const result = specEngineAdapter(root, STUB_CTX, {
       walk: () => ({
@@ -151,63 +157,13 @@ test("specEngineAdapter excludes an ignored sub-member (by basename)", () => {
     });
     const subs = result.partialUnits.filter((u) => u.path !== ".");
     assert.deepEqual(
-      subs.map((u) => u.path),
-      ["packages/engine"],
+      subs.map((u) => u.path).sort(),
+      ["packages/cli", "packages/engine"],
+      "the ignore array is discarded — both sub-members are emitted",
     );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-// ── WR-02: `ignore` is matched as a GLOB, not just an exact string ──────────
-
-test("specEngineAdapter excludes sub-members via a documented ignore glob (WR-02)", () => {
-  const root = mkTempDir();
-  try {
-    writeMember(root, {
-      specs: "spec-engine@3",
-      members: "packages/*",
-      // A documented glob form — must actually exclude, not silently no-op.
-      ignore: ["packages/cli"],
-    });
-    const result = specEngineAdapter(root, STUB_CTX, {
-      walk: () => ({
-        entries: ["packages/engine", "packages/cli"],
-        diagnostics: [],
-      }),
-      isDir: () => true,
-    });
-    const subs = result.partialUnits.filter((u) => u.path !== ".");
-    assert.deepEqual(
-      subs.map((u) => u.path),
-      ["packages/engine"],
-      "the 'packages/*'-shaped ignore glob excludes packages/cli",
-    );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("specEngineAdapter still honors an exact-name ignore as a glob subset (WR-02)", () => {
-  const root = mkTempDir();
-  try {
-    writeMember(root, {
-      specs: "spec-engine@3",
-      members: "packages/*",
-      ignore: ["engine"], // exact basename — a literal is a glob that matches itself
-    });
-    const result = specEngineAdapter(root, STUB_CTX, {
-      walk: () => ({
-        entries: ["packages/engine", "packages/cli"],
-        diagnostics: [],
-      }),
-      isDir: () => true,
-    });
-    const subs = result.partialUnits.filter((u) => u.path !== ".");
-    assert.deepEqual(
-      subs.map((u) => u.path),
-      ["packages/cli"],
-    );
+    // The ignore entries never leak into any unit or signal either.
+    const serialized = JSON.stringify(result.partialUnits);
+    assert.equal(/tag-scan|"ignore"/.test(serialized), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -254,6 +210,174 @@ test("specEngineAdapter degrades a malformed member config to a MALFORMED_CONFIG
     });
     assert.deepEqual(result.partialUnits, []);
     assert.ok(result.diagnostics.some((d) => d.code === "MALFORMED_CONFIG"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEngineAdapter degrades a valid-JSON-but-non-object member config the same way", () => {
+  const root = mkTempDir();
+  try {
+    // Parses fine, but is not a JSON object — the other malformed branch.
+    for (const content of ["[]", "42", "null"]) {
+      writeMember(root, content);
+      let result;
+      assert.doesNotThrow(() => {
+        result = specEngineAdapter(root, STUB_CTX);
+      });
+      assert.deepEqual(result.partialUnits, [], content);
+      assert.equal(result.diagnostics.length, 1, content);
+      assert.equal(result.diagnostics[0].code, "MALFORMED_CONFIG", content);
+      assert.match(result.diagnostics[0].message, /not a JSON object/, content);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── RED-108: specEnginePlatform — per-child classification ──────────────────
+
+test("specEnginePlatform classifies config-carrying children and re-anchors expansion (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    // The canonical dir itself must never become a unit, even config-carrying.
+    fs.mkdirSync(path.join(root, "spec-engine"));
+    writeMember(path.join(root, "spec-engine"), { specs: "spec-engine@1" });
+
+    // Bare config-carrying member (the SE fixture shape: no .git, no package.json).
+    fs.mkdirSync(path.join(root, "admin"));
+    writeMember(path.join(root, "admin"), { specs: "spec-engine@2" });
+
+    // Expanding member: config + members glob + real package dirs.
+    fs.mkdirSync(path.join(root, "expandable", "packages", "engine"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(root, "expandable", "packages", "cli"), {
+      recursive: true,
+    });
+    writeMember(path.join(root, "expandable"), {
+      specs: "spec-engine@2",
+      members: "packages/*",
+      ignore: ["packages/cli"], // AC4: never filters expansion
+    });
+
+    // Plain folder (no config) and unconfigured repo-root child: neither is
+    // this function's job — both are skipped here (siblings/merge own them).
+    fs.mkdirSync(path.join(root, "docs"));
+    fs.mkdirSync(path.join(root, "rogue"));
+    fs.mkdirSync(path.join(root, "rogue", ".git"));
+
+    const result = specEnginePlatform(root, STUB_CTX);
+
+    const byName = Object.fromEntries(
+      result.partialUnits.map((u) => [u.name, u]),
+    );
+    assert.deepEqual(Object.keys(byName).sort(), [
+      "admin",
+      "expandable",
+      "expandable/packages/cli",
+      "expandable/packages/engine",
+    ]);
+    assert.equal(byName.admin.path, "admin");
+    assert.equal(byName.admin.kind, "workspace-package");
+    assert.equal(byName.admin.signals.hasSpecEngineConfig, true);
+    assert.equal(byName.expandable.path, "expandable");
+    assert.equal(
+      byName["expandable/packages/engine"].path,
+      "expandable/packages/engine",
+    );
+    assert.equal(
+      byName["expandable/packages/cli"].path,
+      "expandable/packages/cli",
+      "AC4: the member config's ignore never filters expansion",
+    );
+    assert.deepEqual(result.edges, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEnginePlatform child kind is repo iff the child has a .git dir or file (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    fs.mkdirSync(path.join(root, "git-dir"));
+    fs.mkdirSync(path.join(root, "git-dir", ".git"));
+    writeMember(path.join(root, "git-dir"), { specs: "spec-engine@2" });
+
+    fs.mkdirSync(path.join(root, "git-file"));
+    fs.writeFileSync(
+      path.join(root, "git-file", ".git"),
+      "gitdir: ../elsewhere\n",
+    );
+    writeMember(path.join(root, "git-file"), { specs: "spec-engine@2" });
+
+    fs.mkdirSync(path.join(root, "bare"));
+    writeMember(path.join(root, "bare"), { specs: "spec-engine@2" });
+
+    const result = specEnginePlatform(root, STUB_CTX);
+    const kinds = Object.fromEntries(
+      result.partialUnits.map((u) => [u.name, u.kind]),
+    );
+    assert.deepEqual(kinds, {
+      "git-dir": "repo",
+      "git-file": "repo",
+      bare: "workspace-package",
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEnginePlatform re-anchors a malformed child config's diagnostic locus and never throws (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    fs.mkdirSync(path.join(root, "admin"));
+    writeMember(path.join(root, "admin"), "{ not valid json ");
+
+    let result;
+    assert.doesNotThrow(() => {
+      result = specEnginePlatform(root, STUB_CTX);
+    });
+    // Config-carrying but malformed: diagnostic with a platform-relative
+    // locus, no unit (matches the adapter's own root behavior).
+    assert.deepEqual(result.partialUnits, []);
+    assert.equal(result.diagnostics.length, 1);
+    assert.equal(result.diagnostics[0].code, "MALFORMED_CONFIG");
+    assert.equal(result.diagnostics[0].path, "admin/spec-engine.member.json");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("specEnginePlatform filters child enumeration by ctx.ignore and guards hostile readdir names (RED-108)", () => {
+  const root = mkTempDir();
+  try {
+    fs.mkdirSync(path.join(root, "admin"));
+    writeMember(path.join(root, "admin"), { specs: "spec-engine@2" });
+    fs.mkdirSync(path.join(root, "vendored"));
+    writeMember(path.join(root, "vendored"), { specs: "spec-engine@2" });
+
+    const ignored = specEnginePlatform(root, {
+      ...STUB_CTX,
+      ignore: ["vendored"],
+    });
+    assert.deepEqual(
+      ignored.partialUnits.map((u) => u.name),
+      ["admin"],
+      "opts.ignore filters CHILD ENUMERATION (never expansion)",
+    );
+
+    const hostile = specEnginePlatform(root, STUB_CTX, {
+      readdir: () => ["admin", "x/../../../../etc"],
+    });
+    assert.deepEqual(
+      hostile.partialUnits.map((u) => u.name),
+      ["admin"],
+    );
+    assert.ok(
+      hostile.diagnostics.some((d) => d.code === "UNIT_PATH_ESCAPE"),
+      "a readdir entry smuggling .. segments is dropped with UNIT_PATH_ESCAPE",
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

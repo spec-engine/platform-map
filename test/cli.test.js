@@ -62,6 +62,20 @@ test("default human mode: diagnostic-producing fixture separates streams (SC2)",
   assert.match(r.stdout, /monorepo-pnpm \(monorepo\)/, "tree header on stdout");
 });
 
+// ── RED-108: SE-platform fixture maps through the CLI ───────────────────────
+
+test("--json on an SE-platform fixture emits member units, exit 0 (RED-108)", () => {
+  const r = run(["--json", path.join(fixturesDir, "se-platform")]);
+  assert.equal(r.status, 0);
+  const parsed = JSON.parse(r.stdout);
+  assert.equal(parsed.mode, "multi-repo");
+  const names = parsed.units.map((u) => u.name);
+  assert.ok(names.includes("admin"));
+  assert.ok(names.includes("expandable/packages/cli"));
+  assert.ok(!names.includes("spec-engine"));
+  assert.ok(!names.includes("docs"));
+});
+
 // ── CLI-02: --json → toJSON on stdout, NOTHING on stderr ────────────────────
 
 test("--json: parses as JSON with schemaVersion 1, stderr empty (SC2 hard)", () => {

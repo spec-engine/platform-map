@@ -171,6 +171,30 @@ with name-collision honesty. Today edges are deliberately scoped per sibling
 set; `test/mixed-topology.test.js` pins the current suppression behavior so
 RED-98 must consciously change it.
 
+### PMAP-014 — SE-platform discovery (RED-108)
+`map(platformDir)` on a directory carrying a canonical `spec-engine/` dir —
+with no `platform-map.json` of any shape — classifies the platform's children
+with Spec Engine's three-bucket contract: (1) a child carrying
+`spec-engine.member.json` is a confirmed member unit, its `members` glob
+expanded per-child (`<child>/<rel>` naming); (2) an unconfigured child that
+looks like a repo root (`.git` dir-or-file OR `package.json` — RUNG1-02
+parity) yields `UNCONFIGURED_SIBLING`; (3) a plain folder is silent. Config
+presence confirms membership even with neither repo-root marker (the SE
+fixture shape) and even when malformed (diagnostic, never sibling advice).
+The member config's `ignore` never filters expansion (scan-only — the
+normative AC4 semantic SE conforms to); caller `opts.ignore` filters child
+enumeration only. A `platform-map.json` always wins over the convention;
+disabling the spec-engine adapter disables the mode.
+**Status: verified.**
+Evidence: `test/se-platform.test.js` (three-bucket e2e incl. both rogue
+shapes, kind rule repo-iff-.git, precedence vs definition, adapter-disable,
+malformed-child locus); `test/spec-engine.test.js` (specEnginePlatform
+re-anchoring, kind rule, ctx.ignore enumeration filter, hostile-readdir
+guard, ignore-never-filters-expansion); `test/detect.test.js`
+(looksLikeRepoRoot + default-vs-widened scan gate);
+`test/fixtures/se-platform` swept by PMAP-001 determinism + PMAP-005
+no-write; `test/cli.test.js` (--json smoke).
+
 ## Traceability matrix
 
 | Requirement | Status | Primary tests | Known limits |
@@ -188,5 +212,6 @@ RED-98 must consciously change it.
 | PMAP-011 | verified* | platform-root, platform-convention, cli-init-platform | rung-3 members carry no scan signals |
 | PMAP-012 | verified* | platform-root (walk + containment), platform-convention (drift) | boundary tested via MapOptions.boundary / HOME env |
 | PMAP-013 | unimplemented | mixed-topology pins current suppression | RED-98 |
+| PMAP-014 | verified | se-platform, spec-engine, detect (predicate), cli smoke, verification sweep | repo-root widening is SE-mode-scoped |
 
 `verified*` = verified with notes (see catalog entry).

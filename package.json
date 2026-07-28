@@ -1,6 +1,6 @@
 {
   "name": "@spec-engine/platform-map",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "description": "Zero-dependency TypeScript library + CLI that deterministically maps a directory tree's platform topology (units, edges, diagnostics).",
