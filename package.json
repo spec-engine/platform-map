@@ -4,6 +4,10 @@
   "type": "module",
   "license": "MIT",
   "description": "Zero-dependency TypeScript library + CLI that deterministically maps a directory tree's platform topology (units, edges, diagnostics).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spec-engine/platform-map.git"
+  },
   "engines": {
     "node": ">=20"
   },
