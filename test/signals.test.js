@@ -136,9 +136,12 @@ test("censusSignals omits packageManager and languages for a bare directory", ()
   assert.equal(Object.hasOwn(signals, "languages"), false);
 });
 
-test("censusSignals never sets a signal to a literal false", () => {
+// ROLE-01: `private` is the one boolean signal where an explicit false is a
+// determined fact, so it is excepted from the never-false rule.
+test("censusSignals never sets a boolean presence signal to a literal false (private excepted)", () => {
   const { signals } = censusSignals(path.join(signalsDir, "plain"));
-  for (const value of Object.values(signals)) {
+  for (const [key, value] of Object.entries(signals)) {
+    if (key === "private") continue;
     assert.notEqual(value, false);
   }
 });
