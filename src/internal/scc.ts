@@ -1,17 +1,10 @@
-// GRAPH-04: the single Tarjan strongly-connected-components helper. It is the ONE
-// source of truth for cycle detection — consumed by BOTH graph().cycles() (Phase 3
-// plan 02) AND map()'s CYCLE_SUSPECTED diagnostic emission (plan 03) — so the two
-// agree byte-for-byte. Cycles NEVER throw (unlike DF's planWaves): this is a pure,
-// terminating computation over a finite in-memory adjacency Map.
-//
-// Determinism (DETR-01/02, Pitfall 3): the canonical representation of a cycle is its
-// LEXICALLY SORTED member list — NOT DFS traversal order, which is input-order
-// dependent. The outer array is sorted by first member. Nodes are visited in sorted
-// order so component discovery is input-order-independent even before the final
-// canonical sort (belt-and-suspenders). Comparison is plain `<`/`>` — never a
-// locale-aware method (ICU order is not stable across Node/ICU versions).
-//
-// No I/O: no fs, no child_process, no fetch. Pure structure in, sorted arrays out.
+// [GRAPH-04] The single Tarjan SCC helper, the one source of truth for cycle
+// detection, so graph().cycles() and map()'s CYCLE_SUSPECTED diagnostics agree
+// byte-for-byte. The canonical representation of a cycle is its LEXICALLY
+// SORTED member list, NOT DFS traversal order, which is input-order dependent;
+// the outer array is sorted by first member, and nodes are visited in sorted
+// order as well. Comparison is plain `<`/`>`, never a locale-aware method.
+// Pure structure in, sorted arrays out; no I/O.
 
 function compare(a: string, b: string): number {
   if (a < b) return -1;
@@ -26,14 +19,11 @@ interface Frame {
 }
 
 /**
- * Returns strongly-connected components of size >= 2, each as a lexically-sorted
- * member list; the outer array is sorted by first member. Deterministic regardless
- * of node/edge input order (canonicalization by sort, not by traversal order).
- * Self-edges (to === from) never form a reported cycle: an SCC of a single node is
- * dropped by the size >= 2 filter.
- *
- * @param nodes     the full node set (order irrelevant — sorted internally).
- * @param adjacency from -> Set(to) forward-edge map.
+ * Returns strongly-connected components of size >= 2, each as a lexically
+ * sorted member list; the outer array is sorted by first member. Deterministic
+ * regardless of node/edge input order. A self-edge alone never forms a
+ * reported cycle: single-node SCCs are dropped by the size filter.
+ * `adjacency` is a from -> Set(to) forward-edge map.
  */
 export function canonicalCycles(
   nodes: string[],

@@ -1,17 +1,13 @@
-// The single sort/stringify seam for platform-map (D-08: serialize.ts exists day one
-// as the determinism test harness). Every other producer (walker, sibling scanner,
-// glob expander) is expected to return pre-sorted output already — serialize() proves
-// it by re-sorting defensively, and toJSON() is the only place key order is decided.
-//
-// Rules (DESIGN.md §5, DETR-01/02):
-//  - Same tree in => byte-identical JSON out.
-//  - Sorted units/edges/diagnostics; nested units[] sorted recursively.
-//  - Stable, fixed JSON key order per object type.
-//  - No timestamps, no absolute paths (root-relative only) — enforced by callers,
-//    not by this module (serialize has no filesystem access).
-//  - Every comparison uses plain `<`/`>` on strings/numbers — never a locale-aware
-//    string comparison method (locale/ICU sort order is not guaranteed stable
-//    across Node versions/ICU data).
+// The single sort/stringify seam: serialize.ts is the SOLE sort site in the
+// library. Every other producer is expected to emit pre-sorted output already;
+// serialize() re-sorts defensively so the contract holds regardless, and
+// toJSON() is the only place JSON key order is decided. Same tree in,
+// byte-identical JSON out: sorted units/edges/diagnostics (nested units[]
+// recursively), fixed key order per object type. Every comparison uses plain
+// `<`/`>` on strings/numbers, never a locale-aware method: locale/ICU sort
+// order is not guaranteed stable across Node versions/ICU data. No timestamps
+// or absolute paths; callers enforce that (this module has no filesystem
+// access).
 
 import type {
   Diagnostic,
@@ -64,11 +60,8 @@ function sortUnit(unit: Unit): Unit {
 
 /**
  * Returns a NEW PlatformMap with units (recursively), edges, and diagnostics
- * sorted into the canonical order. Does not mutate its input. This is the
- * ONLY module in the codebase that sorts — every other producer must already
- * emit pre-sorted arrays; this function's job is to guarantee the contract
- * holds regardless of upstream ordering (DETR-02: shuffled/reversed input in
- * must still produce byte-identical output).
+ * sorted into the canonical order, regardless of upstream ordering. Does not
+ * mutate its input.
  */
 export function serialize(pm: PlatformMap): PlatformMap {
   return {
@@ -88,8 +81,7 @@ function orderedSignals(signals: UnitSignals): Record<string, unknown> {
     packageName: signals.packageName,
     hasDockerfile: signals.hasDockerfile,
     hasDeployConfig: signals.hasDeployConfig,
-    // WR-05: defensively re-sorted, same as every other array this module
-    // handles — a future producer could derive this from Set iteration
+    // Defensively re-sorted: a producer could derive this from Set iteration
     // order or similar non-deterministic sources.
     languages: signals.languages
       ? [...signals.languages].sort(compare)
@@ -113,8 +105,7 @@ function orderedUnit(unit: Unit): Record<string, unknown> {
     units: unit.units.map(orderedUnit),
     signals: orderedSignals(unit.signals),
     role: unit.role,
-    // WR-05: defensively re-sorted, same as every other array this module
-    // handles (see orderedSignals' `languages` above).
+    // Defensively re-sorted, like `languages` above.
     sources: [...unit.sources].sort(compare),
   };
 }
@@ -151,9 +142,8 @@ function orderedPlatformMap(pm: PlatformMap): Record<string, unknown> {
 /**
  * Serializes a PlatformMap to a deterministic JSON string: sorted arrays
  * (recursively for nested units), fixed key order per object type, 2-space
- * indent. This is the byte-identical-output contract (DETR-01/02) — calling
- * this twice with the same logical map, regardless of input array ordering,
- * MUST produce the identical string.
+ * indent. The same logical map, regardless of input array ordering, MUST
+ * produce the identical string.
  */
 export function toJSON(pm: PlatformMap): string {
   const sorted = serialize(pm);

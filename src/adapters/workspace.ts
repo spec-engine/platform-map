@@ -1,26 +1,11 @@
-// CFG-06: the workspace-package enumerator. Analog of probeWorkspaceManifest
-// in detect.ts (L81-116) — it REUSES the Detection already on ctx
-// (flavor + workspaceGlobs from detect()); it NEVER re-probes a manifest (A5)
-// and NEVER recurses (map() owns DET-02 recursion). For a monorepo root it
-// expands the workspace globs against a bounded walk() of the tree, and every
-// matched directory holding a readable package.json becomes a
-// kind:"workspace-package" PartialUnit.
-//
-// Security posture:
-//  - SEC-02: resolveWithinRoot(root, dir) on every candidate — an escaping
-//    path is DROPPED with UNIT_PATH_ESCAPE, never followed (T-02-05).
-//  - T-02-06: reuses matchGlob (segment two-pointer, no RegExp) — no ReDoS.
-//  - T-02-07: walk()'s maxDepth/maxEntries caps + never-follow-symlinks.
-//
-// Deliberately NOT here:
-//  - the fs signal census (map() owns it, CONTEXT signal-ownership split),
-//  - dependency edges (Phase 3 / GRAPH-01) — returns edges:[] ALWAYS,
-//  - sorting (serialize.ts is the sole sort site) — natural order out.
-//
-// The `deps` parameter is an injectable seam PURELY for unit tests (mirrors the
-// walk/scan readdir seams) so the SEC-02-drop and UNMATCHED_PATTERN branches
-// are reachable without materializing a hostile tree. Production callers never
-// pass it — it defaults to the real walk + fs probe.
+// [CFG-06] The workspace-package enumerator for monorepo roots: expands the
+// detection's workspace globs over a bounded walk() and turns every matched
+// directory holding a readable package.json into a kind:"workspace-package"
+// PartialUnit. It reuses the Detection already on ctx (never re-probes a
+// manifest) and never recurses (map() owns recursion). Escaping candidate
+// paths are dropped via resolveWithinRoot with UNIT_PATH_ESCAPE. No signal
+// census (map() owns it), no edges (always []), no sorting. `deps` is a
+// test-only injection seam; production callers never pass it.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -59,12 +44,9 @@ function defaultHasPackageJson(absDir: string): boolean {
 }
 
 /**
- * Enumerates workspace-package units for a monorepo `root`. No-op (empty
- * result) unless `ctx.detection.mode === "monorepo"`. Expands
- * `ctx.detection.workspaceGlobs` over a bounded walk of `root`; each matched
- * directory with a readable package.json becomes a PartialUnit
- * (kind:"workspace-package", source:"workspace") whose name/path is the
- * root-relative POSIX path. Returns edges:[] (Phase 3) and never sorts.
+ * Enumerates workspace-package units for a monorepo `root`; empty result for
+ * any other mode. Each matched directory with a readable package.json becomes
+ * a PartialUnit whose name/path is the root-relative POSIX path.
  */
 export function workspaceAdapter(
   root: string,
@@ -94,8 +76,8 @@ export function workspaceAdapter(
 
   for (const relative of matched) {
     if (!hasPackageJson(path.join(root, relative))) continue;
-    // SEC-02: a candidate resolving outside root is dropped + diagnosed
-    // (defense in depth — walk never emits an escaping path itself).
+    // Defense in depth: a candidate resolving outside root is dropped and
+    // diagnosed (walk never emits an escaping path itself).
     const guard = resolveWithinRoot(root, relative);
     if (!guard.ok) {
       diagnostics.push(guard.diagnostic);

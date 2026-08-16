@@ -1,23 +1,13 @@
-// merge(): the pure precedence-fold reducer (CFG-08). The single place all
-// five adapters' disagreements become visible. Contract:
-//   - Input is precedence-ordered, HIGH first. The first writer of a field
-//     wins; a later (lower-precedence) source providing a DIFFERENT value for
-//     an ALREADY-SET field surfaces exactly one CONFIG_CONFLICT naming both
-//     the existing contributor(s) and the incoming source plus both values —
-//     the existing value is KEPT (never a silent override).
-//   - A later source filling an UNSET field is a silent gap-fill (no diagnostic).
-//   - Unit.sources[] accumulates every contributing source in input order.
-//   - Sibling-promotion gate (Pattern 3): a provisional candidate whose name
-//     no higher source claimed becomes an UNCONFIGURED_SIBLING diagnostic when
-//     canonicalDeclaredUnits is true ("config disposes"), else a real unit.
-//
-// This module deliberately does NOT:
-//   - sort anything — serialize.ts is the SOLE sort site (determinism §5); the
-//     Phase-5 shuffle test proves merge output is order-independent.
-//   - perform any I/O (pure, unit-testable in isolation).
-//   - mutate its input `results` (only newly-created Unit objects are written).
-//   - spread untrusted parsed objects — only known fields are copied explicitly
-//     (prototype-pollution guard, 02-RESEARCH.md L509/L516).
+// [CFG-08] merge(): the pure precedence fold where adapter disagreements
+// become visible. Input is precedence-ordered, HIGH first; the first writer of
+// a field wins. A later source with a DIFFERENT value for an already-set field
+// surfaces one CONFIG_CONFLICT naming both contributors and both values (the
+// existing value is kept); filling an UNSET field is a silent gap-fill.
+// Unit.sources[] accumulates every contributor in input order. A provisional
+// sibling no higher source claimed becomes an UNCONFIGURED_SIBLING diagnostic
+// when canonicalDeclaredUnits is true ("config disposes"), else a real unit.
+// Pure: no I/O, no sorting, input never mutated, untrusted parsed objects
+// never spread (only known fields copied explicitly).
 
 import type { AdapterResult, PartialUnit } from "./adapters/index.js";
 import type { AdapterName, Diagnostic, Unit, UnitSignals } from "./types.js";
@@ -112,8 +102,8 @@ function seedUnit(pu: PartialUnit, source: Source, claimed: Set<string>): Unit {
     kind: pu.kind,
     // Default "single-repo"; map() overwrites per-unit mode during recursion.
     mode: pu.mode ?? "single-repo",
-    // First-writer-wins ref; null when no contributing partial declared one,
-    // leaving map()'s MODEL-06 probe to fill it for kind:"repo" units.
+    // null when no contributing partial declared a ref; map()'s probe fills it
+    // for kind:"repo" units.
     ref: pu.ref ?? null,
     units: [],
     signals: signals as UnitSignals,
@@ -134,7 +124,6 @@ function considerScalar(
   const record = unit as unknown as Record<string, unknown>;
   if (claimed.has(field)) {
     if (!valuesEqual(record[field], incoming)) {
-      // Existing (higher precedence) holds the field: report both, keep existing.
       diagnostics.push(
         conflictDiagnostic(
           unit.name,
@@ -148,7 +137,6 @@ function considerScalar(
     }
     return;
   }
-  // Lower precedence fills a gap the higher one left unset — silent.
   record[field] = incoming;
   claimed.add(field);
 }
@@ -185,7 +173,7 @@ function considerSignal(
 /**
  * Folds precedence-ordered adapter results (high first) into resolved units.
  * `canonicalDeclaredUnits` gates the sibling-promotion rule. Returns unsorted
- * units + diagnostics — serialize() is the sole sort site.
+ * units + diagnostics.
  */
 export function merge(
   results: Array<{ source: Source; result: AdapterResult }>,
@@ -200,9 +188,8 @@ export function merge(
       const existing = byName.get(pu.name);
 
       if (existing === undefined) {
-        // No prior claim: an unconfirmed provisional candidate is a diagnostic
-        // (not a unit) ONLY when canonical declared an explicit units[] — else
-        // it is promoted (the zero-config multi-repo case).
+        // No prior claim: a provisional candidate is a diagnostic, not a unit,
+        // only when canonical declared explicit units[]; else it is promoted.
         if (pu.provisional && canonicalDeclaredUnits) {
           diagnostics.push(unconfiguredSiblingDiagnostic(pu.name, pu.path));
           continue;
@@ -213,8 +200,7 @@ export function merge(
         continue;
       }
 
-      // Merge this lower-precedence contribution into the existing unit. A
-      // provisional candidate whose name is already claimed simply confirms
+      // A provisional candidate whose name is already claimed simply confirms
       // and contributes (no UNCONFIGURED_SIBLING).
       const claimed = claims.get(pu.name) as Set<string>;
       considerScalar(existing, claimed, "path", pu.path, source, diagnostics);

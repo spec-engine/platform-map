@@ -1,28 +1,8 @@
-// buildEdges() / populateDegrees(): the pure workspace-dependency-edge builder
-// and degree-counter (GRAPH-01). map()-facing, analog of merge.ts (a pure,
-// I/O-free transform returning order-independent output).
-//
-// THE load-bearing seam: package.json deps reference package NAMES
-// (`@scope/lib`, held in signals.packageName); Unit.name is the platform-relative
-// PATH (`packages/lib`). buildEdges builds a PER-SIBLING-SET
-// `Map<packageName, Unit.name>` index and translates each matched dep name into a
-// target Unit.name path. Intersecting raw dep names against the path-keyed unit
-// set silently yields ZERO edges (Pitfall 1). The index is scoped per sibling
-// set (never global) so a package name that collides across two separate
-// monorepos cannot produce a phantom cross-repo edge (Pitfall 2).
-//
-// This module deliberately does NOT:
-//   - sort anything — serialize.ts is the SOLE sort site (it sorts edges by
-//     (from,to)); buildEdges returns natural order and the shuffle test proves
-//     that output is order-independent once serialized.
-//   - perform any I/O (SEC-05): it consumes an injected `depsOf` callback backed
-//     by the census side-table; no fs/child_process/fetch here.
-//   - assign untrusted dep-name strings into a plain object — the index is a
-//     `Map` (proto-safe), so a `__proto__`/`constructor` dep key is inert (T-03-02).
-//
-// The four dep fields feeding `depsOf` are the documented CONTEXT superset of
-// DF's three (adds optionalDependencies), so edges may differ from DF's live
-// buildDepGraph on optional deps — deliberately.
+// package.json deps reference package NAMES (signals.packageName) while
+// Unit.name is a platform-relative PATH, so edges must be translated through a
+// per-sibling-set Map<packageName, Unit.name> index; a global index would
+// fabricate cross-monorepo edges. The index is a Map, never a plain object, so
+// hostile dep keys like __proto__ are inert. Pure module: no I/O, no sorting.
 
 import type { Diagnostic, Edge, Unit } from "./types.js";
 
@@ -32,14 +12,11 @@ export interface BuildEdgesResult {
 }
 
 /**
- * Builds the workspace-dependency edges for a unit tree. `depsOf` returns a
- * unit's raw workspace dep-NAME candidates (the union of its four manifest
- * dep-field keys), sourced from the map()-owned census side-table. Edges are the
- * intersection of those dep names with the sibling set's package-name index,
- * translated to target `Unit.name` paths; external deps (index miss) and
- * self-edges are dropped. A duplicate packageName within one sibling set emits
- * a CONFIG_CONFLICT diagnostic (first claimant keeps the index slot). Returns
- * natural order — NEVER sorts.
+ * Builds the workspace-dependency edges for a unit tree. `depsOf` supplies a
+ * unit's raw dep-name candidates (all four manifest dep fields). External deps
+ * and self-edges are dropped; a duplicate packageName within one sibling set
+ * emits CONFIG_CONFLICT and the first claimant keeps the index slot. Returns
+ * natural order.
  */
 export function buildEdges(
   units: Unit[],
@@ -51,9 +28,8 @@ export function buildEdges(
   return { edges, diagnostics };
 }
 
-/** Processes one sibling set: builds its scoped packageName -> Unit.name index,
- *  emits each workspace-package's internal edges, then recurses into nested
- *  monorepo children (each a fresh, independently-scoped sibling set). */
+/** One sibling set: scoped name index, its edges, then each nested monorepo's
+ *  children as a fresh, independently scoped set. */
 function visitSet(
   siblings: Unit[],
   depsOf: (u: Unit) => string[],
@@ -73,7 +49,7 @@ function visitSet(
         path: u.name,
         message:
           `CONFIG_CONFLICT: package name "${pkgName}" is claimed by both ` +
-          `"${claimed}" and "${u.name}" — edges resolve to "${claimed}"`,
+          `"${claimed}" and "${u.name}"; edges resolve to "${claimed}"`,
       });
       continue;
     }
@@ -83,7 +59,6 @@ function visitSet(
     if (u.kind === "workspace-package") {
       for (const depName of depsOf(u)) {
         const to = idx.get(depName);
-        // external dep (index miss) filtered; self-edge dropped.
         if (to === undefined || to === u.name) continue;
         out.push({ from: u.name, to, via: "workspace-dependency" });
       }
@@ -93,11 +68,10 @@ function visitSet(
 }
 
 /**
- * Writes `workspaceInDegree`/`workspaceOutDegree` onto every
- * kind:"workspace-package" unit at all depths from the flat `edges` array. 0 is
- * set EXPLICITLY (presence is meaningful for deriveRole — MODEL-02/GRAPH-05).
- * Because edges only ever form within a sibling set and Unit.name is globally
- * unique (MODEL-05), global counting over the flat array equals per-set counting.
+ * Writes `workspaceInDegree`/`workspaceOutDegree` onto every workspace-package
+ * unit at all depths. 0 is written explicitly; deriveRole reads presence, so
+ * absence would misclassify. Global counting over the flat edge list is safe
+ * because Unit.name is unique and edges never leave a sibling set.
  */
 export function populateDegrees(units: Unit[], edges: Edge[]): void {
   const inDeg = new Map<string, number>();

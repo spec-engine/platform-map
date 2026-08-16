@@ -1,12 +1,8 @@
-// SEC-02: the path-traversal guard. Every resolved sibling/unit path is
-// checked against this before it's allowed to enter a Detection/PlatformMap
-// — an escaping path is dropped with a UNIT_PATH_ESCAPE diagnostic, never
-// silently followed (DESIGN.md §6, T-02-PT).
-//
-// Pure path math only: no filesystem calls, no symlink resolution (the
-// walker/caller owns symlink-following decisions, D-11). No
-// `import.meta.url`/`__dirname` (D-04) — resolution is always relative to a
-// caller-supplied root.
+// [SEC-02] The path-traversal guard: every resolved sibling/unit path is
+// checked here before entering a Detection/PlatformMap; an escaping path is
+// dropped with a UNIT_PATH_ESCAPE diagnostic, never silently followed. Pure
+// path math only: no filesystem calls, no symlink resolution (the
+// walker/caller owns symlink decisions).
 
 import * as path from "node:path";
 import type { Diagnostic } from "../types.js";
@@ -20,11 +16,9 @@ function toPosix(p: string): string {
 }
 
 /**
- * Resolves `candidate` against `root` and rejects any resolution that
- * escapes `root` (an absolute candidate, or a relative candidate whose
- * resolved path climbs above `root` via `..`). On success, returns the
- * normalized root-relative path with POSIX separators (determinism —
- * DESIGN.md §5).
+ * Resolves `candidate` against `root` and rejects any resolution that escapes
+ * `root` (an absolute candidate, or one climbing above `root` via `..`). On
+ * success, returns the normalized root-relative path with POSIX separators.
  */
 export function resolveWithinRoot(
   root: string,

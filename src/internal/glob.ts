@@ -1,20 +1,10 @@
-// PRIM-01/02, D-12: a deliberately narrow, zero-dep glob subset — the exact
-// shapes workspace manifests actually use: literal path segments, `*`
-// (matches exactly one segment, with intra-segment `*` wildcarding for
-// partial names), `**` (matches zero-or-more segments), and pnpm's leading
-// `!negation`. This is NOT a general glob engine (brace expansion, extglob,
-// character classes are all explicitly out of scope, per DESIGN.md D9 and
-// 01-RESEARCH.md's "Don't Hand-Roll" table).
-//
-// Security posture (D-12, DESIGN.md §6, T-03-REDOS): matching is
-// SEGMENT-BY-SEGMENT using an iterative two-pointer algorithm (the
-// generalization, to path segments, of the classic linear-time greedy
-// wildcard-matching technique) — never a compiled RegExp, and never
-// recursive backtracking over `**`. Compiling `**` to a regex like
-// `(.*)+` is exactly the ReDoS class this decision forbids (picomatch
-// CVE-2026-33671 is the directly analogous real-world example cited in
-// 01-RESEARCH.md Pitfall 4). No `RegExp` literal or constructor call
-// appears anywhere in this module.
+// A deliberately narrow, zero-dep glob subset, the shapes workspace manifests
+// actually use: literal segments, `*` (one segment, with intra-segment
+// wildcarding), `**` (zero-or-more segments), and pnpm's leading `!negation`.
+// Brace expansion, extglob, and character classes are out of scope. Matching
+// is SEGMENT-BY-SEGMENT via an iterative two-pointer algorithm; `**` is never
+// compiled to a RegExp (a `(.*)+`-style regex is exactly the ReDoS class this
+// forbids). No `RegExp` literal or constructor appears in this module.
 
 import type { Diagnostic } from "../types.js";
 
@@ -28,12 +18,9 @@ function splitSegments(p: string): string[] {
 }
 
 /**
- * Linear, non-backtracking-exponential wildcard match at the character
- * level within a single segment: `*` matches zero-or-more characters. This
- * is the classic two-pointer greedy algorithm (remember the most recent
- * `*` and a fallback position, advance greedily, backtrack the fallback
- * only on mismatch) — polynomial worst case, never catastrophic, and
- * contains no `RegExp` of any kind.
+ * Character-level wildcard match within one segment: the classic two-pointer
+ * greedy algorithm (remember the last `*` and a fallback position, backtrack
+ * only the fallback on mismatch); polynomial worst case, no RegExp.
  */
 function wildcardMatchSegment(pattern: string, text: string): boolean {
   if (pattern === "*") return true; // the common case: whole-segment wildcard
@@ -62,13 +49,9 @@ function wildcardMatchSegment(pattern: string, text: string): boolean {
 }
 
 /**
- * Segment-by-segment matcher (D-12): `**` is handled by an iterative
- * two-pointer scan over the segment arrays (the generalization, to whole
- * segments, of the same greedy/fallback technique `wildcardMatchSegment`
- * uses at the character level within one segment) — advancing a position
- * index over path segments, NEVER by compiling `**` to a regex. Worst-case
- * cost is polynomial in (pattern segment count × candidate segment count),
- * never exponential/catastrophic, regardless of how many `**` appear.
+ * Segment-level matcher: `**` uses the same iterative greedy/fallback scan
+ * generalized to whole segments, NEVER a compiled regex; worst case is
+ * polynomial in pattern segments times candidate segments.
  */
 function matchSegments(patSegs: string[], candSegs: string[]): boolean {
   let pi = 0;
@@ -107,16 +90,12 @@ function compareCodeUnit(a: string, b: string): number {
 }
 
 /**
- * Matches `candidatePaths` against `patterns` (the pnpm-subset: literal
- * segments, `*`, `**`, leading `!negation`). Patterns are processed in
- * DECLARATION ORDER (Pitfall 2): an inclusion pattern is matched against
- * the full `candidatePaths` universe and its matches are added to the
- * accumulated result set; a `!negation` pattern is matched against the
- * CURRENT accumulated set and its matches are removed. Only inclusion
- * patterns with zero matches (against the full candidate universe) emit an
- * `UNMATCHED_PATTERN` diagnostic — a negation pattern that removes nothing
- * is silent (PRIM-02). Returns `matched` sorted in plain code-unit order
- * (sort-at-construction, never locale-aware comparison).
+ * Matches `candidatePaths` against `patterns` in DECLARATION ORDER: an
+ * inclusion pattern matches against the full candidate universe and adds to
+ * the accumulated set; a `!negation` matches against the CURRENT accumulated
+ * set and removes. Only a zero-match inclusion emits UNMATCHED_PATTERN; a
+ * negation removing nothing is silent. `matched` is sorted in plain code-unit
+ * order, never locale-aware.
  */
 export function matchGlob(
   patterns: string[],

@@ -1,30 +1,10 @@
-// The map-owned per-unit filesystem + package.json signal census (CONTEXT
-// signal-ownership split: adapters carry ONLY their own linkage signals; the
-// filesystem/package.json census belongs to map(), which calls this once per
-// resolved unit). Analog of internal/scan.ts: a FACTS-ONLY bounded scan using
-// try/catch existence helpers, emitting MODEL-02-honest absence.
-//
-// MODEL-02 (unknown-honesty): every absent fact is OMITTED — a field is NEVER
-// set to a literal `false`/`null`. The returned UnitSignals is a partial object
-// carrying only the facts actually determined. serialize.ts owns key order and
-// defensively re-sorts `languages`, so this module returns natural order.
-//
-// Deliberately NOT here:
-//  - graph-derived signals (workspaceInDegree/workspaceOutDegree) — Phase 3,
-//  - linkage signals (hasDfPointer/hasSpecEngineConfig) — the owning adapters,
-//  - any write/network/subprocess (SEC-05) — pure reads only.
-//
-// GRAPH-01 (Phase 3): the census ALSO returns `workspaceDepNames` — the union of
-// the four dep-field key-sets — purely so map() can feed edges.ts. These dep
-// NAMES are NEVER entered into UnitSignals (a dep list is not a signal); they
-// travel in a map()-local side-table and are only ever used as Map keys
-// downstream (edges.ts), so the prototype-pollution discipline below extends to
-// them: each dep field is read by KNOWN KEYS ONLY and guarded as a plain object
-// before Object.keys, and no untrusted dep-name key is ever assigned into a
-// plain object.
-//
-// Prototype-pollution guard (T-02-09): the parsed package.json is read by
-// KNOWN KEYS ONLY (never spread), so no untrusted key ever reaches the model.
+// The map()-owned per-unit filesystem + package.json signal census; adapters
+// carry only their own linkage signals. Every absent fact is OMITTED, never
+// set to a literal false/null: the result is a partial UnitSignals carrying
+// only determined facts. The parsed package.json is read by KNOWN KEYS ONLY,
+// never spread, so no untrusted key reaches the model; the same discipline
+// covers `workspaceDepNames` (a dep list is not a signal, so the names never
+// enter UnitSignals and are only ever used as Map keys downstream).
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -32,13 +12,12 @@ import { validatePackageName } from "./internal/package-name.js";
 import { walk } from "./internal/walk.js";
 import type { Diagnostic, UnitSignals } from "./types.js";
 
-// Bounded caps for the language census walk — a hostile/huge/symlink-cyclic
-// unit tree must never hang (T-02-07). walk() emits CENSUS_TRUNCATED on a cap.
+// Bounded caps so a hostile/huge/symlink-cyclic unit tree cannot hang the
+// language census; walk() emits CENSUS_TRUNCATED on a cap.
 const CENSUS_MAX_DEPTH = 16;
 const CENSUS_MAX_ENTRIES = 5000;
 
-// Coarse file-extension -> language map. Intentionally broad-strokes: the
-// signal is "what languages appear", not a precise line count.
+// Coarse extension -> language map; presence, not precise counts.
 const EXTENSION_LANGUAGE: Record<string, string> = {
   ".ts": "ts",
   ".tsx": "ts",
@@ -73,7 +52,7 @@ const LOCKFILE_PACKAGE_MANAGER: Array<[string, UnitSignals["packageManager"]]> =
     ["bun.lockb", "bun"],
   ];
 
-// Filesystem markers that indicate deployment configuration (types.ts list).
+// Filesystem markers that indicate deployment configuration.
 const DEPLOY_MARKERS = [
   "vercel.json",
   "fly.toml",
@@ -91,8 +70,7 @@ function existsAt(dir: string, name: string): boolean {
   }
 }
 
-/** Reads `<dir>/package.json` once. Returns null on any failure (never throws)
- *  and only for a plain JSON object (arrays/primitives -> null). */
+/** Reads `<dir>/package.json` once; null on failure or non-plain-object JSON. */
 function readPackageJson(dir: string): Record<string, unknown> | null {
   let text: string;
   try {
@@ -115,11 +93,7 @@ function readPackageJson(dir: string): Record<string, unknown> | null {
   }
 }
 
-// The four package.json dep fields whose KEYS are workspace-dependency-edge
-// candidates (T-03-01: read by known keys only, never Object.keys(whole manifest)).
-// This is the documented CONTEXT superset of DF's three fields (adds
-// optionalDependencies) — edges may therefore differ from DF's live buildDepGraph
-// on optional deps, deliberately.
+// Dep fields whose KEYS are workspace-dependency-edge candidates.
 const DEP_FIELDS = [
   "dependencies",
   "devDependencies",
@@ -127,10 +101,8 @@ const DEP_FIELDS = [
   "peerDependencies",
 ] as const;
 
-/** Collects the union of the four dep fields' KEYS from a parsed package.json,
- *  guarding each field is a plain object before Object.keys (T-03-01). Dep names
- *  are only ever surfaced as Map keys downstream (edges.ts), never assigned into
- *  a plain object, so a `__proto__`/`constructor` dep key cannot pollute. */
+/** Union of the four dep fields' KEYS; each field is guarded as a plain
+ *  object before Object.keys, so a `__proto__` dep key cannot pollute. */
 function collectWorkspaceDepNames(
   pkg: Record<string, unknown> | null,
 ): string[] {
@@ -174,18 +146,11 @@ function censusLanguages(dir: string): {
 }
 
 /**
- * Runs the map-owned census over `absUnitDir`: reads package.json facts
- * (private/hasExports/hasBin/hasStartScript/packageName), probes filesystem
- * markers (hasDockerfile/hasDeployConfig), maps the lockfile to a
- * packageManager, and runs a bounded language-extension census. Every absent
- * fact is OMITTED (MODEL-02) — the result is a partial UnitSignals. An invalid
- * package name drops only the packageName field and emits a MALFORMED_CONFIG
- * diagnostic while every other signal is still returned (SEC-03). Never throws.
- *
- * `locus` (WR-01) is the unit's platform-relative path; it is stamped onto any
- * MALFORMED_CONFIG diagnostic this census emits so the failure reports which
- * unit produced it and the diagnostic sort key stays total. map() always passes
- * it; standalone callers may omit it.
+ * Runs the census over `absUnitDir`: package.json facts, filesystem markers,
+ * lockfile -> packageManager, and a bounded language census; absent facts are
+ * omitted. An invalid package name drops only the packageName field (with a
+ * MALFORMED_CONFIG diagnostic); every other signal is still returned. `locus`,
+ * the unit's platform-relative path, is stamped onto emitted diagnostics.
  */
 export function censusSignals(
   absUnitDir: string,
@@ -201,7 +166,7 @@ export function censusSignals(
   const pkg = readPackageJson(absUnitDir);
   const workspaceDepNames = collectWorkspaceDepNames(pkg);
   if (pkg !== null) {
-    // An explicit `"private": false` is a determined fact, not absence — it is
+    // An explicit `"private": false` is a determined fact, not absence; it is
     // what makes deriveRole rule 3's `private !== false` clause decidable.
     if (typeof pkg.private === "boolean") signals.private = pkg.private;
     if (pkg.exports !== undefined || pkg.main !== undefined) {

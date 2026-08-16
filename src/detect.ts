@@ -1,24 +1,11 @@
-// detect(): the cheap, recursive-composable shape probe (DET-01..03).
-//
-// COMPOSABILITY, NOT SELF-RECURSION (DET-02, 01-RESEARCH.md Pattern 1):
-// detect() never calls itself and never loops over its own siblings/units.
-// It is a pure, path-parameterized function — DET-02's "a multi-repo
-// constituent that is itself a monorepo reports mode:'monorepo' at its own
-// node" is satisfied by calling detect() again on that constituent's own
-// path, which future callers (map()'s Phase-2 orchestrator, or a test) do
-// explicitly. Proving this here would mean detect() reimplementing
-// map()'s recursion budget, which is out of this phase's scope.
-//
-// DET-05 BOUNDARY: this module performs NO git subprocess and no sibling
-// git I/O beyond directory listing + `.git` existence checks (delegated to
-// internal/scan.ts). Every `Detection.siblings[].ref` is always `null` —
-// the bounded origin/HEAD probe that would resolve it is Phase 2's siblings
-// adapter. Only `node:fs` existence/read + `node:path` are used; no
-// `import.meta.url`/`__dirname` (D-04) — resolution is always relative to
-// the caller-supplied `root` argument.
-//
-// `Detection.workspaceGlobs` is the RAW glob strings only — no expansion
-// into real paths happens here (that's Phase 2's workspace adapter).
+// detect(): the cheap shape probe. It is a pure, path-parameterized function
+// that never calls itself and never loops over its own siblings/units; a
+// constituent that is itself a monorepo reports mode "monorepo" by calling
+// detect() on that constituent's own path. No git subprocess runs here and
+// sibling I/O is directory listing plus `.git` existence checks only, so
+// every `Detection.siblings[].ref` is `null`. `Detection.workspaceGlobs` is
+// the RAW glob strings, never expanded. Resolution is always relative to the
+// caller-supplied `root`; no `import.meta.url`/`__dirname`.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -65,18 +52,14 @@ function readJsonObject(p: string): Record<string, unknown> | null {
     }
     return null;
   } catch {
-    return null; // malformed JSON in an adapter source degrades silently here —
-    // detect() has no diagnostics channel of its own (DESIGN.md's Detection
-    // shape carries none); Phase 2's map() surfaces MALFORMED_CONFIG for
-    // package.json/lerna.json parse failures.
+    return null; // degrades silently: detect() has no diagnostics channel
   }
 }
 
 /**
- * Probe order (DET-03): pnpm-workspace.yaml > package.json "workspaces"
- * (yarn vs npm disambiguated by lockfile/config presence — RESEARCH.md
- * Pattern 2 / Assumptions Log A1) > lerna.json. turbo.json/nx.json are
- * checked separately as an orchestrator overlay and never gate flavor.
+ * Probe order is normative: pnpm-workspace.yaml > package.json "workspaces"
+ * (yarn vs npm disambiguated by lockfile/config presence) > lerna.json.
+ * turbo.json/nx.json are an orchestrator overlay and never gate flavor.
  */
 function probeWorkspaceManifest(root: string): ManifestProbe | null {
   const pnpmYamlText = readFile(path.join(root, "pnpm-workspace.yaml"));
@@ -91,13 +74,9 @@ function probeWorkspaceManifest(root: string): ManifestProbe | null {
     const globs = Array.isArray(workspaces)
       ? (workspaces as string[])
       : ((workspaces as { packages?: string[] } | null)?.packages ?? []);
-    // A1 (RESEARCH.md Pattern 2, Assumptions Log): "workspaces" in
-    // package.json is used by BOTH Yarn and npm. Disambiguate by
-    // lockfile/config presence, not the field itself — Yarn Berry ships no
-    // yarn.lock by default, hence the .yarnrc.yml check. This heuristic is
-    // a reconstruction flagged [ASSUMED] in 01-RESEARCH.md (not
-    // independently re-verified against Dark Factory's actual source in
-    // this repo — see 01-RESEARCH.md Open Question 1 / Assumptions Log A1).
+    // "workspaces" is used by BOTH Yarn and npm; disambiguate by
+    // lockfile/config presence, not the field itself. Yarn Berry ships no
+    // yarn.lock by default, hence the .yarnrc.yml check.
     const isYarn =
       exists(path.join(root, ".yarnrc.yml")) ||
       exists(path.join(root, "yarn.lock"));
@@ -115,7 +94,7 @@ function probeWorkspaceManifest(root: string): ManifestProbe | null {
   return null;
 }
 
-/** turbo.json/nx.json — overlay only, informational, never gates flavor. */
+/** Informational overlay only; never gates flavor. */
 function probeOrchestrator(root: string): Detection["orchestrator"] {
   if (exists(path.join(root, "turbo.json"))) return "turbo";
   if (exists(path.join(root, "nx.json"))) return "nx";
@@ -124,19 +103,16 @@ function probeOrchestrator(root: string): Detection["orchestrator"] {
 
 function assertRootExists(root: string): void {
   if (!exists(root)) {
-    // Never an absolute path in the thrown message (errors.ts contract) —
-    // basename is enough to identify which root was missing. Falls back to
-    // a fixed placeholder (never the raw `root`) when basename is empty
-    // (e.g. root normalizes to an all-slash path like "/" or "").
+    // Never an absolute path in the thrown message; basename identifies the
+    // missing root, with a fixed placeholder when basename is empty (e.g. "/").
     throw new RootNotFoundError(path.basename(root) || "(root)");
   }
 }
 
 /**
- * Cheap shape probe: no sibling git I/O beyond directory listing + `.git`
- * checks (DET-05). Classifies `root` as `"monorepo"` (a workspace manifest
- * is present), `"multi-repo"` (no manifest, but sibling `.git` repos are
- * found alongside `root`), or `"single-repo"` (neither).
+ * Classifies `root` as `"monorepo"` (a workspace manifest is present),
+ * `"multi-repo"` (no manifest, but sibling `.git` repos are found alongside
+ * `root`), or `"single-repo"` (neither).
  */
 export function detect(root: string, opts: DetectOptions = {}): Detection {
   assertRootExists(root);
@@ -153,14 +129,8 @@ export function detect(root: string, opts: DetectOptions = {}): Detection {
     };
   }
 
-  // scanSiblings() also returns `diagnostics` (e.g. a genuine
-  // UNIT_PATH_ESCAPE from a hostile readdir entry escaping the scan
-  // directory itself — see scan.ts), which are intentionally discarded
-  // here: this mirrors readJsonObject's malformed-JSON deferral above —
-  // Detection (types.ts) carries no diagnostics field of its own in this
-  // phase, so there is no path for this information to reach a caller yet.
-  // Phase 2's map() is where diagnostics get a first-class home in
-  // PlatformMap.
+  // scanSiblings() diagnostics are intentionally discarded: Detection carries
+  // no diagnostics field of its own.
   const { siblings } = scanSiblings(root, opts.scanRoot ?? "..", opts.ignore);
   if (siblings.length > 0) {
     return { mode: "multi-repo", siblings, orchestrator };

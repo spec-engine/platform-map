@@ -1,23 +1,11 @@
-// PRIM-04, D-10/D-11: a symlink-safe, depth/entry-capped directory walker.
-// This is the bounded file-census primitive Phase 2's adapters will use to
-// expand workspace globs and derive language signals — a hostile/huge/
-// symlink-cyclic target-repo tree must never hang or escape the walk
-// (DESIGN.md §6, T-03-SYM/T-03-RES).
-//
-// Two structural bounds enforce this, never aspirational conventions:
-//   - `dirent.isSymbolicLink()` is checked for EVERY entry at EVERY
-//     recursion depth, BEFORE deciding whether to recurse — symlinked
-//     entries are skipped entirely (never `fs.realpath`-followed, never
-//     included in the output). This alone terminates any symlink cycle.
-//   - `maxDepth`/`maxEntries` are threaded through the recursion; hitting
-//     either cap appends a CENSUS_TRUNCATED diagnostic (never a silent
-//     partial result) and halts further descent.
-//
-// `readdir` is an injectable seam PURELY for determinism testing (Pitfall
-// 3/DETR-02: directory-listing order is not guaranteed across platforms) —
-// production callers never pass it, defaulting to
-// `fs.readdirSync(dir, { withFileTypes: true })`. Only `node:fs`/`node:path`
-// are imported — no `import.meta.url`/`__dirname` (D-04).
+// [PRIM-04] A symlink-safe, depth/entry-capped directory walker: the bounded
+// file-census primitive. `dirent.isSymbolicLink()` is checked for EVERY entry
+// at EVERY recursion depth, BEFORE deciding whether to recurse; symlinked
+// entries are skipped entirely (never realpath-followed, never in output),
+// which alone terminates any symlink cycle. Hitting maxDepth or maxEntries
+// appends a CENSUS_TRUNCATED diagnostic (never a silent partial result) and
+// halts further descent. `readdir` is a test-only seam (directory-listing
+// order is not guaranteed across platforms); production callers never pass it.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -32,7 +20,7 @@ export interface WalkDirent {
 export interface WalkOptions {
   maxDepth: number;
   maxEntries: number;
-  /** TEST-ONLY seam (Pitfall 3) — production callers never override this. */
+  /** TEST-ONLY seam; production callers never override this. */
   readdir?: (dir: string) => WalkDirent[];
 }
 
@@ -70,12 +58,10 @@ function truncated(locus: string, reason: string): Diagnostic {
 
 /**
  * Walks `root` and returns every non-symlinked file/directory entry as a
- * root-relative POSIX path (sort-at-construction — final order is plain
- * code-unit sort, identical regardless of underlying directory-listing
- * order, DETR-02). Never follows symlinks (checked at every depth); halts
- * and emits a single CENSUS_TRUNCATED diagnostic the first time `maxDepth`
- * or `maxEntries` would be exceeded — never a silent partial result, never
- * a hang (PRIM-04).
+ * root-relative POSIX path in plain code-unit sort order, identical
+ * regardless of underlying directory-listing order. Never follows symlinks
+ * (checked at every depth); halts and emits a single CENSUS_TRUNCATED
+ * diagnostic the first time `maxDepth` or `maxEntries` would be exceeded.
  */
 export function walk(root: string, opts: WalkOptions): WalkResult {
   const { maxDepth, maxEntries } = opts;

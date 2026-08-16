@@ -1,17 +1,7 @@
-// The adapter registry: the ONE place adapter precedence is declared (CFG-03,
-// CFG-09). Each adapter is a pure `(root, ctx) => AdapterResult` function that
-// reads exactly one source of truth and NEVER calls another adapter — all
-// cross-source reconciliation happens later, in merge.ts, not here
-// (ARCHITECTURE.md Anti-Pattern 1). This module deliberately does NOT:
-//   - run adapters (map() drives the fold),
-//   - resolve/merge/sort anything (merge.ts + serialize.ts own that),
-//   - perform any I/O (it is pure config/dispatch metadata).
-//
-// PRECEDENCE is the single source of truth for source ranking. `"caller"`
-// (MapOptions.units) sits between canonical and dark-factory but has no
-// adapter function — map() injects it directly, so selectAdapters() skips it.
-// The ADAPTERS registry starts empty; later Phase-2 plans register real
-// adapter functions into it with no change to this contract.
+// The adapter registry: the ONE place adapter precedence is declared. Each
+// adapter is a pure `(root, ctx) => AdapterResult` reader of exactly one
+// source of truth and NEVER calls another adapter; cross-source reconciliation
+// happens later, in merge.ts. No I/O here: pure config/dispatch metadata.
 
 import type {
   AdapterName,
@@ -30,7 +20,7 @@ import { specEngineAdapter } from "./spec-engine.js";
 import { workspaceAdapter } from "./workspace.js";
 
 /** Everything an adapter needs, computed once by map() and shared read-only.
- *  Adapters never re-run detect() (A5) and never recurse (only map() does). */
+ *  Adapters never re-run detect() and never recurse. */
 export interface AdapterContext {
   detection: Detection;
   ignore: string[];
@@ -38,10 +28,9 @@ export interface AdapterContext {
 }
 
 /** A single source's contribution toward one unit, BEFORE merge/precedence
- *  resolution. `path` is as-declared — map() applies resolveWithinRoot (SEC-02)
- *  at the merge/assembly seam, not inside adapters. `signals` carries ONLY the
- *  owning adapter's linkage signals (hasDfPointer/hasSpecEngineConfig, …); the
- *  filesystem census is map()-owned (CONTEXT signal-ownership split). */
+ *  resolution. `path` is as-declared; map() applies resolveWithinRoot at the
+ *  assembly seam, not inside adapters. `signals` carries ONLY the owning
+ *  adapter's linkage signals; the filesystem census is map()-owned. */
 export interface PartialUnit {
   name: string;
   path: string;
@@ -51,14 +40,12 @@ export interface PartialUnit {
   source: AdapterName | "caller";
   ref?: string;
   /** Siblings adapter marks candidates provisional; merge()'s promotion gate
-   *  decides real-unit vs UNCONFIGURED_SIBLING (Pattern 3). */
+   *  decides real-unit vs UNCONFIGURED_SIBLING. */
   provisional?: boolean;
 }
 
-/** Config-level facts the CANONICAL adapter alone surfaces back to map() for
- *  post-merge application: the promotion-gate flag plus the name/ignore/overrides
- *  that live on the config object rather than on any single unit. Every other
- *  adapter leaves `AdapterResult.canonical` undefined. */
+/** Config-level facts the CANONICAL adapter alone surfaces back to map():
+ *  the promotion-gate flag plus name/ignore/overrides. */
 export interface CanonicalSideChannel {
   /** Overrides PlatformMap.name when present (else basename(root)). */
   name?: string;
@@ -66,16 +53,13 @@ export interface CanonicalSideChannel {
   ignore?: string[];
   /** Per-unit role overrides; validity-vs-assembled-units is checked in map(). */
   overrides?: Record<string, { role?: Role }>;
-  /** The promotion gate ("config disposes"): true iff config declared a
-   *  non-empty units[] — turns unconfirmed siblings into UNCONFIGURED_SIBLING. */
+  /** The promotion gate: true iff config declared a non-empty units[], which
+   *  turns unconfirmed siblings into UNCONFIGURED_SIBLING. */
   declaredUnits: boolean;
 }
 
-/** An adapter's full output. `edges` is always [] in Phase 2 (edges are
- *  Phase 3, GRAPH-01). Parse/read failures degrade to MALFORMED_CONFIG
- *  diagnostics here — only canonical (config.ts) and RootNotFoundError throw.
- *  `canonical` is the canonical adapter's typed side-channel (undefined for all
- *  other adapters). */
+/** An adapter's full output. Parse/read failures degrade to MALFORMED_CONFIG
+ *  diagnostics; only canonical (config.ts) and RootNotFoundError throw. */
 export interface AdapterResult {
   partialUnits: PartialUnit[];
   edges: Edge[];
@@ -90,9 +74,9 @@ export type Adapter = (
   ctx: AdapterContext,
 ) => Promise<AdapterResult> | AdapterResult;
 
-/** The fixed precedence, high → low. The single place order is declared
- *  (mirrors detect()'s DET-03 probe-order idiom). `"caller"` has no adapter
- *  function — map() injects MapOptions.units at this rank directly. */
+/** The fixed precedence, high to low; the single place source ranking is
+ *  declared. `"caller"` has no adapter function; map() injects
+ *  MapOptions.units at this rank directly. */
 export const PRECEDENCE: Array<AdapterName | "caller"> = [
   "canonical",
   "caller",
@@ -102,12 +86,7 @@ export const PRECEDENCE: Array<AdapterName | "caller"> = [
   "siblings",
 ];
 
-/** Registered adapter functions, listed in PRECEDENCE order for readability
- *  (selectAdapters walks PRECEDENCE, not this object's key order, so provenance
- *  ordering is authoritative regardless — but keeping them aligned makes the
- *  precedence chain obvious). canonical (CFG-01) is wired in plan 02-04,
- *  dark-factory (CFG-04) + spec-engine (CFG-05) in plan 02-05, workspace
- *  (CFG-06) in 02-02, siblings (CFG-07) in 02-03. */
+/** Listed in PRECEDENCE order for readability; PRECEDENCE is authoritative. */
 const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
   canonical: canonicalAdapter,
   "dark-factory": darkFactoryAdapter,
@@ -116,12 +95,9 @@ const ADAPTERS: Partial<Record<AdapterName, Adapter>> = {
   siblings: siblingsAdapter,
 };
 
-/**
- * Returns the enabled adapters in precedence order. Walks PRECEDENCE, skips
- * `"caller"` (map() handles injected units), and includes a name only when a
- * function is registered for it AND the caller has not disabled it via
- * `options.adapters[name] === false` (CFG-09). Order-preserving and pure.
- */
+/** Returns the enabled adapters in precedence order: skips `"caller"` and any
+ *  name unregistered or disabled via `options.adapters[name] === false`.
+ *  Order-preserving and pure. */
 export function selectAdapters(
   options: MapOptions,
 ): Array<{ source: AdapterName; adapter: Adapter }> {
