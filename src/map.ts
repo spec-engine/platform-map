@@ -613,9 +613,13 @@ export async function map(
       const resolvedPlatformRoot = path.resolve(effectiveRoot);
       for (const member of definition.members) {
         const conventionalPath = member.path ?? member.name;
+        // An escaping declared path is never statted or read: the canonical
+        // adapter already dropped and diagnosed it with UNIT_PATH_ESCAPE.
+        const guard = resolveWithinRoot(effectiveRoot, conventionalPath);
+        if (!guard.ok) continue;
         const dir = diskDirByName.has(member.name)
           ? (diskDirByName.get(member.name) as string | null)
-          : path.join(effectiveRoot, conventionalPath);
+          : path.join(effectiveRoot, guard.relative);
         if (dir === null || !isDirectory(dir)) {
           // Listed-but-missing: unit still emitted; identity exists,
           // location doesn't.
@@ -640,7 +644,7 @@ export async function map(
           // path math) so a local relocation never changes the drift verdict.
           const hint = sniff.marker.root ?? "..";
           if (
-            path.resolve(resolvedPlatformRoot, conventionalPath, hint) !==
+            path.resolve(resolvedPlatformRoot, guard.relative, hint) !==
             resolvedPlatformRoot
           ) {
             extraDiagnostics.push(

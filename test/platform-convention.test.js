@@ -562,10 +562,7 @@ test("CR-01/SEC-06: escaping definition member paths yield exactly the adapter's
 
     // exactly one UNIT_PATH_ESCAPE per escaping member, each emitted once
     const escapes = pm.diagnostics.filter((d) => d.code === "UNIT_PATH_ESCAPE");
-    assert.deepEqual(
-      escapes.map((d) => d.path).sort(),
-      ["../outside", "/etc"],
-    );
+    assert.deepEqual(escapes.map((d) => d.path).sort(), ["../outside", "/etc"]);
 
     // the outside marker's content never leaks, and no missing-member entry
     // is fabricated for an escaped declaration
