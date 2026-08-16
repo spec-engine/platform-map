@@ -590,6 +590,55 @@ test("CR-01/SEC-06: escaping definition member paths yield exactly the adapter's
   }
 });
 
+test("CR-01/SEC-06: an escaping declaration cannot suppress the non-repo-child diagnostic for a real root child", async () => {
+  const parent = mktree();
+  try {
+    const plat = path.join(parent, "plat");
+    gitDir(plat);
+    writeJson(path.join(plat, "platform-map.json"), {
+      name: "acme",
+      members: [{ name: "x", path: "stray/../../outside" }, { name: "real" }],
+    });
+    gitDir(path.join(plat, "real"));
+    // a plain root child sharing the escaping path's first segment
+    fs.mkdirSync(path.join(plat, "stray"));
+
+    const pm = await map(plat, { boundary: parent, refProbe: false });
+
+    const nonRepo = pm.diagnostics.find(
+      (d) =>
+        d.code === "PLATFORM_DRIFT" &&
+        d.severity === "info" &&
+        d.message.startsWith("PLATFORM_DRIFT: non-repo child:"),
+    );
+    assert.ok(nonRepo, "non-repo child diagnostic must survive the escape");
+    assert.equal(nonRepo.path, "stray");
+
+    // the escaping member leaves exactly one UNIT_PATH_ESCAPE and no other trace
+    const escapes = pm.diagnostics.filter((d) => d.code === "UNIT_PATH_ESCAPE");
+    assert.deepEqual(
+      escapes.map((d) => d.path),
+      ["stray/../../outside"],
+    );
+    assert.ok(pm.units.every((u) => u.name !== "x"));
+    assert.ok(
+      pm.diagnostics.every(
+        (d) =>
+          d.code === "UNIT_PATH_ESCAPE" ||
+          (!d.message.includes('"x"') && !d.message.includes("outside")),
+      ),
+    );
+    assertNoAbsolutePaths(pm, parent);
+
+    assert.equal(
+      toJSON(await map(plat, { boundary: parent, refProbe: false })),
+      toJSON(await map(plat, { boundary: parent, refProbe: false })),
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("rung-1/2 firewall: a self-described repo inside a platform maps standalone, byte-identical to before", async () => {
   const parent = mktree();
   try {
