@@ -35,6 +35,7 @@ import { canonicalCycles } from "./internal/scc.js";
 import { serialize } from "./internal/serialize.js";
 import {
   claim,
+  enforceUniqueUnitNames,
   joinLocation,
   nameCollisionDiagnostic,
   type UnitNameRegistry,
@@ -575,6 +576,14 @@ export async function map(
       }
       extraDiagnostics.push(censusFailureDiagnostic(unit.name, error));
     }
+  }
+
+  // Backstop for the Unit.name uniqueness contract: catches collisions
+  // arriving through seams the expansion dedupe cannot see. Runs before the
+  // ref probe, drift checks, and edge/degree passes so no downstream
+  // consumer can ever observe a duplicate.
+  for (const d of enforceUniqueUnitNames(merged.units)) {
+    extraDiagnostics.push(d);
   }
 
   // map(), not the siblings adapter, owns the default-branch ref probe so it

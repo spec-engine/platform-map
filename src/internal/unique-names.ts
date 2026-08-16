@@ -3,7 +3,7 @@
 // graph(), serialize) keys on, so a duplicate silently corrupts all of them.
 // Pure: no I/O, never throws.
 
-import type { Diagnostic } from "../types.js";
+import type { Diagnostic, Unit } from "../types.js";
 
 export type ClaimOutcome =
   | "free"
@@ -36,6 +36,41 @@ export function claim(
   return existing === location
     ? "duplicate-same-location"
     : "duplicate-different-location";
+}
+
+/**
+ * Post-assembly backstop for the types.ts Unit.name uniqueness contract.
+ * Walks the tree depth-first in array order (the merged fold order, which
+ * follows adapter precedence, so first equals first-precedence); the first
+ * occurrence keeps the name, every later duplicate is removed in place from
+ * its containing units array with one CONFIG_CONFLICT diagnostic per drop.
+ * Deterministic, never throws.
+ */
+export function enforceUniqueUnitNames(units: Unit[]): Diagnostic[] {
+  const registry: UnitNameRegistry = new Map();
+  const diagnostics: Diagnostic[] = [];
+  const visit = (list: Unit[], parentLocation: string): void => {
+    let write = 0;
+    for (const u of list) {
+      const location = joinLocation(parentLocation, u.path);
+      if (claim(registry, u.name, location) !== "free") {
+        diagnostics.push(
+          nameCollisionDiagnostic(
+            u.name,
+            registry.get(u.name) as string,
+            location,
+          ),
+        );
+        continue;
+      }
+      list[write] = u;
+      write++;
+      if (u.units.length > 0) visit(u.units, location);
+    }
+    list.length = write;
+  };
+  visit(units, ".");
+  return diagnostics;
 }
 
 /** A name claimed at two different root-relative locations; `path` is the
