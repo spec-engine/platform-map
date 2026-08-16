@@ -734,7 +734,11 @@ function writeDfConfig(dir, config) {
 }
 
 test("map() infers platform.repos[] units from a dark-factory platform with no platform-map.json", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-df-"));
+  // Wrapper dir isolates the sibling scan from concurrent tests' tmpdir
+  // fixtures (the scan reads the root's parent).
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-df-"));
+  const root = path.join(parent, "root");
+  fs.mkdirSync(root);
   try {
     fs.mkdirSync(path.join(root, "svc-api"), { recursive: true });
     fs.mkdirSync(path.join(root, "ui"), { recursive: true });
@@ -759,7 +763,7 @@ test("map() infers platform.repos[] units from a dark-factory platform with no p
     // dependsOn[] never becomes an edge (Phase 3).
     assert.deepEqual(pm.edges, []);
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 
