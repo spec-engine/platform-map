@@ -37,11 +37,13 @@ export interface Args {
 const SUBCOMMANDS = new Set<Command>(["detect", "graph", "init"]);
 
 /**
- * Hand-rolled zero-dep parser. The first bare token in SUBCOMMANDS claims
- * `command`; the next bare token is `dir`; a second is a usage error; an
- * unknown `-` flag sets `error`; `--dot`/`--yes` on a non-owning command are
- * accepted and ignored. A bare `--` ends options (POSIX), making a directory
- * whose name starts with `-` reachable as a positional.
+ * Hand-rolled zero-dep parser. A bare token in SUBCOMMANDS claims `command`
+ * only before options end and before a positional is seen; the next bare
+ * token is `dir`; any later token is a usage error, so a subcommand token
+ * after the dir never reorders the command. An unknown `-` flag sets
+ * `error`; `--dot`/`--yes` on a non-owning command are accepted and ignored.
+ * A bare `--` ends options (POSIX), making a directory whose name starts
+ * with `-` or matches a subcommand reachable as a positional.
  */
 export function parseArgs(argv: string[]): Args {
   const a: Args = {
@@ -96,7 +98,8 @@ export function parseArgs(argv: string[]): Args {
         return a;
       }
     }
-    if (a.command === "map" && SUBCOMMANDS.has(tok as Command)) {
+    const mayClaim = !optsEnded && !sawDir && a.command === "map";
+    if (mayClaim && SUBCOMMANDS.has(tok as Command)) {
       a.command = tok as Command;
     } else if (!sawDir) {
       a.dir = tok;
