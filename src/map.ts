@@ -611,15 +611,28 @@ export async function map(
   if (definition !== null) {
     try {
       const resolvedPlatformRoot = path.resolve(effectiveRoot);
+      // An escaping declared path is never statted or read, and contributes
+      // nothing downstream: the canonical adapter already dropped and
+      // diagnosed it with UNIT_PATH_ESCAPE.
+      const guardedMembers: Array<{
+        member: (typeof definition.members)[number];
+        conventionalPath: string;
+        relative: string;
+      }> = [];
       for (const member of definition.members) {
         const conventionalPath = member.path ?? member.name;
-        // An escaping declared path is never statted or read: the canonical
-        // adapter already dropped and diagnosed it with UNIT_PATH_ESCAPE.
         const guard = resolveWithinRoot(effectiveRoot, conventionalPath);
         if (!guard.ok) continue;
+        guardedMembers.push({
+          member,
+          conventionalPath,
+          relative: guard.relative,
+        });
+      }
+      for (const { member, conventionalPath, relative } of guardedMembers) {
         const dir = diskDirByName.has(member.name)
           ? (diskDirByName.get(member.name) as string | null)
-          : path.join(effectiveRoot, guard.relative);
+          : path.join(effectiveRoot, relative);
         if (dir === null || !isDirectory(dir)) {
           // Listed-but-missing: unit still emitted; identity exists,
           // location doesn't.
@@ -644,7 +657,7 @@ export async function map(
           // path math) so a local relocation never changes the drift verdict.
           const hint = sniff.marker.root ?? "..";
           if (
-            path.resolve(resolvedPlatformRoot, guard.relative, hint) !==
+            path.resolve(resolvedPlatformRoot, relative, hint) !==
             resolvedPlatformRoot
           ) {
             extraDiagnostics.push(
@@ -664,7 +677,7 @@ export async function map(
       // glob, and holds no .git gets an info diagnostic. Dotdirs skipped;
       // symlinks not followed (Dirent.isDirectory() is false for symlinks).
       const memberTopSegments = new Set(
-        definition.members.map((m) => (m.path ?? m.name).split("/")[0]),
+        guardedMembers.map((g) => g.relative.split("/")[0]),
       );
       let entries: fs.Dirent[];
       try {
