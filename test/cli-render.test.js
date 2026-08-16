@@ -145,6 +145,57 @@ test("parseArgs(['--','--json']) → --json after -- is a positional (dir), not 
   assert.equal(a.error, undefined);
 });
 
+// ── CLI-07 (WR-03): claiming ends at -- and at the dir positional ───────────
+
+test("parseArgs(['--','detect']) → command map, dir 'detect' (no claim after --)", () => {
+  const a = parseArgs(["--", "detect"]);
+  assert.equal(a.command, "map");
+  assert.equal(a.dir, "detect");
+  assert.equal(a.error, undefined);
+});
+
+test("parseArgs(['mydir','graph']) → unexpected-argument error, never a silent command reorder", () => {
+  const a = parseArgs(["mydir", "graph"]);
+  assert.equal(a.command, "map");
+  assert.equal(a.dir, "mydir");
+  assert.equal(a.error, "unexpected argument: graph");
+});
+
+test("parseArgs(['--','detect','x']) → dir 'detect', then unexpected-argument error on 'x'", () => {
+  const a = parseArgs(["--", "detect", "x"]);
+  assert.equal(a.command, "map");
+  assert.equal(a.dir, "detect");
+  assert.equal(a.error, "unexpected argument: x");
+});
+
+test("parseArgs(['--json','detect']) → flags before the subcommand still claim", () => {
+  const a = parseArgs(["--json", "detect"]);
+  assert.equal(a.command, "detect");
+  assert.equal(a.json, true);
+  assert.equal(a.error, undefined);
+});
+
+test("parseArgs(['detect','mydir']) → command detect, dir 'mydir' (regression)", () => {
+  const a = parseArgs(["detect", "mydir"]);
+  assert.equal(a.command, "detect");
+  assert.equal(a.dir, "mydir");
+  assert.equal(a.error, undefined);
+});
+
+test("parseArgs(['detect','--','graph']) → command detect, dir 'graph' (subcommand-named dir after --)", () => {
+  const a = parseArgs(["detect", "--", "graph"]);
+  assert.equal(a.command, "detect");
+  assert.equal(a.dir, "graph");
+  assert.equal(a.error, undefined);
+});
+
+test("parseArgs(['detect','detect']) → command detect, dir 'detect'", () => {
+  const a = parseArgs(["detect", "detect"]);
+  assert.equal(a.command, "detect");
+  assert.equal(a.dir, "detect");
+  assert.equal(a.error, undefined);
+});
+
 // ── renderTree (CLI-01): shape, box-drawing, determinism, no absolute path ──
 
 test("renderTree emits header + box-drawing tree with nested continuation", () => {
