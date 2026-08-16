@@ -263,6 +263,77 @@ test("map() expands a multi-repo constituent that is itself a monorepo to mode:m
   }
 });
 
+// IDENT-04: a caller-injected unit colliding with a would-be nested expansion
+// name. The observable contract: one survivor (the first-precedence caller
+// unit), CONFIG_CONFLICT surfaced, nothing doubled.
+test("map() surfaces CONFIG_CONFLICT and keeps the first-precedence unit on a forced name collision (IDENT-04)", async () => {
+  const parent = fs.mkdtempSync(
+    path.join(os.tmpdir(), "platform-map-collide-"),
+  );
+  try {
+    const mono = path.join(parent, "mono");
+    fs.mkdirSync(path.join(mono, ".git"), { recursive: true });
+    fs.writeFileSync(
+      path.join(mono, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    const px = path.join(mono, "packages", "x");
+    const py = path.join(mono, "packages", "y");
+    fs.mkdirSync(px, { recursive: true });
+    fs.mkdirSync(py, { recursive: true });
+    fs.writeFileSync(
+      path.join(px, "package.json"),
+      JSON.stringify({ name: "@mono/x" }),
+    );
+    fs.writeFileSync(
+      path.join(py, "package.json"),
+      JSON.stringify({
+        name: "@mono/y",
+        dependencies: { "@mono/x": "workspace:*" },
+      }),
+    );
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(path.join(workdir, "stub"), { recursive: true });
+
+    const pm = await map(workdir, {
+      boundary: parent,
+      refProbe: false,
+      units: [{ name: "mono/packages/x", path: "stub" }],
+    });
+
+    const all = [];
+    (function collect(units) {
+      for (const u of units) {
+        all.push(u);
+        if (u.units.length > 0) collect(u.units);
+      }
+    })(pm.units);
+
+    const claimants = all.filter((u) => u.name === "mono/packages/x");
+    assert.equal(claimants.length, 1, "exactly one unit keeps the name");
+    assert.ok(
+      claimants[0].sources.includes("caller"),
+      "the first-precedence caller unit survives",
+    );
+
+    assert.ok(
+      pm.diagnostics.some(
+        (d) =>
+          d.code === "CONFIG_CONFLICT" &&
+          /mono\/packages\/x/.test(d.message ?? ""),
+      ),
+      "expected a CONFIG_CONFLICT naming the collision",
+    );
+
+    const names = all.map((u) => u.name);
+    assert.equal(new Set(names).size, names.length);
+    const edgeKeys = pm.edges.map((e) => `${e.from}->${e.to}`);
+    assert.equal(new Set(edgeKeys).size, edgeKeys.length);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("MapOptions.refProbe:false skips the ref probe; probed-not-declared refs stay null", {
   skip: GIT ? false : "git binary unavailable",
 }, async () => {
