@@ -5,9 +5,12 @@
 // test/fixtures/signals (no .git needed).
 
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { deriveRole } from "../dist/index.mjs";
 import { censusSignals } from "../dist/signals.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +41,22 @@ test("censusSignals omits absent facts entirely (never false) — MODEL-02", () 
   assert.equal(Object.hasOwn(signals, "hasDeployConfig"), false);
   assert.equal(Object.hasOwn(signals, "packageManager"), false);
   assert.deepEqual(signals.languages, ["go"]);
+});
+
+test("an explicit private:false is recorded as a fact and defeats role rule 3", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-signals-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "pub-pkg", private: false, main: "index.js" }),
+    );
+    const { signals } = censusSignals(dir);
+    assert.equal(signals.private, false);
+    assert.equal(signals.hasExports, true);
+    assert.notEqual(deriveRole(signals), "library");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("censusSignals drops an invalid package name but keeps every other signal (SEC-03)", () => {

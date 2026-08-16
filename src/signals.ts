@@ -201,7 +201,9 @@ export function censusSignals(
   const pkg = readPackageJson(absUnitDir);
   const workspaceDepNames = collectWorkspaceDepNames(pkg);
   if (pkg !== null) {
-    if (pkg.private === true) signals.private = true;
+    // An explicit `"private": false` is a determined fact, not absence — it is
+    // what makes deriveRole rule 3's `private !== false` clause decidable.
+    if (typeof pkg.private === "boolean") signals.private = pkg.private;
     if (pkg.exports !== undefined || pkg.main !== undefined) {
       signals.hasExports = true;
     }
