@@ -301,7 +301,7 @@ export function parseYesNo(s: string): boolean {
 /** Short usage/synopsis line (to stderr on a usage error). */
 export function usage(err?: string): string {
   const prefix = err ? `platform-map: ${err}\n` : "";
-  return `${prefix}usage: platform-map [--json] [dir]\n       platform-map [detect|graph|init] [dir] [--dot] [--yes]\n       platform-map --help | --version\n`;
+  return `${prefix}usage: platform-map [--json] [--boundary <dir>] [dir]\n       platform-map [detect|graph|init] [dir] [--dot] [--yes] [--boundary <dir>]\n       platform-map --help | --version\n`;
 }
 
 /** The `--help` text: default command + subcommands + flags. */

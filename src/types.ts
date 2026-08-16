@@ -233,4 +233,9 @@ export interface MapOptions extends DetectOptions {
    *  followed (D-06 containment). Default: os.homedir(). An escaping
    *  resolution becomes a diagnostic, never a followed path. */
   boundary?: string;
+  /** Set to false to skip the git origin/HEAD ref probe entirely — every
+   *  probed-not-declared ref stays null. The probe is timeout-bounded, so a
+   *  loaded machine can otherwise yield ref:null where a fast one yields a
+   *  branch name; callers that need load-independent output disable it. */
+  refProbe?: false;
 }

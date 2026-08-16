@@ -665,16 +665,20 @@ export async function map(
   // to ref:null and never stalls the batch (T-02-10). probeRef never rejects
   // (it collapses every failure to null), so Promise.all is safe.
   // kind:"workspace-package" units are NEVER probed.
+  const probeCandidates =
+    opts.refProbe === false
+      ? []
+      : merged.units.filter(
+          (unit) => unit.kind === "repo" && unit.ref === null,
+        );
   await Promise.all(
-    merged.units
-      .filter((unit) => unit.kind === "repo" && unit.ref === null)
-      .map(async (unit) => {
-        // RED-97 (IP-6): probe at the member's actual disk location (local
-        // override honored); a forcibly-missing member keeps ref:null.
-        const dir = unitDiskDir(unit);
-        if (dir === null) return;
-        unit.ref = await probeRef(dir);
-      }),
+    probeCandidates.map(async (unit) => {
+      // RED-97 (IP-6): probe at the member's actual disk location (local
+      // override honored); a forcibly-missing member keeps ref:null.
+      const dir = unitDiskDir(unit);
+      if (dir === null) return;
+      unit.ref = await probeRef(dir);
+    }),
   );
 
   // RED-97 (IP-5/IP-7, D-04): assembly-time drift checks. Emitted at ASSEMBLY
@@ -787,7 +791,9 @@ export async function map(
   // GRAPH-01: translate each unit's raw dep NAMES into workspace-package edges
   // via the per-sibling-set packageName->Unit.name index. buildEdges returns
   // natural order; serialize() below is the sole sort site (sorts by (from,to)).
-  const edges = buildEdges(merged.units, (u) => depSideTable.get(u.name) ?? []);
+  const built = buildEdges(merged.units, (u) => depSideTable.get(u.name) ?? []);
+  const edges = built.edges;
+  for (const d of built.diagnostics) extraDiagnostics.push(d);
 
   // GRAPH-05 STRICT ORDER (03-03): degrees -> cycles -> roles, in exactly this
   // sequence. Degrees MUST be written before applyRoles or deriveRole's rules 2/4

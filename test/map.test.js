@@ -226,6 +226,32 @@ test("map() expands a multi-repo constituent that is itself a monorepo to mode:m
   }
 });
 
+test("MapOptions.refProbe:false skips the ref probe; probed-not-declared refs stay null", {
+  skip: GIT ? false : "git binary unavailable",
+}, async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-refopt-"));
+  try {
+    const sib = path.join(parent, "sib-repo");
+    fs.mkdirSync(sib);
+    spawnSync("git", ["init", "-q"], { cwd: sib, stdio: "ignore" });
+    spawnSync(
+      "git",
+      ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+      { cwd: sib, stdio: "ignore" },
+    );
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const probed = await map(workdir);
+    const skipped = await map(workdir, { refProbe: false });
+    const refOf = (pm) => pm.units.find((u) => u.name === "sib-repo").ref;
+    assert.equal(refOf(probed), "main");
+    assert.equal(refOf(skipped), null);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("map() surfaces UNMATCHED_PATTERN (not a throw) when a workspace glob matches nothing", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-map-"));
   try {

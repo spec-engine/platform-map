@@ -24,7 +24,12 @@
 // DF's three (adds optionalDependencies), so edges may differ from DF's live
 // buildDepGraph on optional deps — deliberately.
 
-import type { Edge, Unit } from "./types.js";
+import type { Diagnostic, Edge, Unit } from "./types.js";
+
+export interface BuildEdgesResult {
+  edges: Edge[];
+  diagnostics: Diagnostic[];
+}
 
 /**
  * Builds the workspace-dependency edges for a unit tree. `depsOf` returns a
@@ -32,15 +37,18 @@ import type { Edge, Unit } from "./types.js";
  * dep-field keys), sourced from the map()-owned census side-table. Edges are the
  * intersection of those dep names with the sibling set's package-name index,
  * translated to target `Unit.name` paths; external deps (index miss) and
- * self-edges are dropped. Returns natural order — NEVER sorts.
+ * self-edges are dropped. A duplicate packageName within one sibling set emits
+ * a CONFIG_CONFLICT diagnostic (first claimant keeps the index slot). Returns
+ * natural order — NEVER sorts.
  */
 export function buildEdges(
   units: Unit[],
   depsOf: (u: Unit) => string[],
-): Edge[] {
+): BuildEdgesResult {
   const edges: Edge[] = [];
-  visitSet(units, depsOf, edges);
-  return edges;
+  const diagnostics: Diagnostic[] = [];
+  visitSet(units, depsOf, edges, diagnostics);
+  return { edges, diagnostics };
 }
 
 /** Processes one sibling set: builds its scoped packageName -> Unit.name index,
@@ -50,12 +58,26 @@ function visitSet(
   siblings: Unit[],
   depsOf: (u: Unit) => string[],
   out: Edge[],
+  diagnostics: Diagnostic[],
 ): void {
   const idx = new Map<string, string>();
   for (const u of siblings) {
     if (u.kind !== "workspace-package") continue;
     const pkgName = u.signals.packageName;
-    if (pkgName !== undefined) idx.set(pkgName, u.name);
+    if (pkgName === undefined) continue;
+    const claimed = idx.get(pkgName);
+    if (claimed !== undefined) {
+      diagnostics.push({
+        code: "CONFIG_CONFLICT",
+        severity: "warning",
+        path: u.name,
+        message:
+          `CONFIG_CONFLICT: package name "${pkgName}" is claimed by both ` +
+          `"${claimed}" and "${u.name}" — edges resolve to "${claimed}"`,
+      });
+      continue;
+    }
+    idx.set(pkgName, u.name);
   }
   for (const u of siblings) {
     if (u.kind === "workspace-package") {
@@ -66,7 +88,7 @@ function visitSet(
         out.push({ from: u.name, to, via: "workspace-dependency" });
       }
     }
-    if (u.units.length > 0) visitSet(u.units, depsOf, out);
+    if (u.units.length > 0) visitSet(u.units, depsOf, out, diagnostics);
   }
 }
 

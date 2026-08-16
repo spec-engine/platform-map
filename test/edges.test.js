@@ -57,11 +57,12 @@ test("buildEdges translates dep NAMES to target Unit.name PATHs; externals filte
   const depsOf = (u) =>
     u.name === "apps/web" ? ["@scope/lib", "react", "web"] : [];
 
-  const edges = buildEdges(units, depsOf);
+  const { edges, diagnostics } = buildEdges(units, depsOf);
 
   assert.deepEqual(edges, [
     { from: "apps/web", to: "packages/lib", via: "workspace-dependency" },
   ]);
+  assert.deepEqual(diagnostics, []);
 });
 
 // ── Per-sibling-set scoping: no phantom cross-monorepo edge ──────────────────
@@ -77,7 +78,7 @@ test("buildEdges scopes the index per sibling set — a shared package name acro
   // repoA/app depends on @x/shared — must resolve to repoA/shared, never repoB/shared.
   const depsOf = (u) => (u.name === "repoA/app" ? ["@x/shared"] : []);
 
-  const edges = buildEdges(units, depsOf);
+  const { edges } = buildEdges(units, depsOf);
 
   assert.deepEqual(edges, [
     { from: "repoA/app", to: "repoA/shared", via: "workspace-dependency" },
@@ -87,6 +88,27 @@ test("buildEdges scopes the index per sibling set — a shared package name acro
     !edges.some((e) => e.to === "repoB/shared"),
     "expected no cross-set edge to repoB/shared",
   );
+});
+
+// ── Duplicate packageName within one sibling set ────────────────────────────
+
+test("a duplicate packageName within a sibling set emits CONFIG_CONFLICT; first claimant keeps the slot", () => {
+  const units = [
+    pkg("packages/lib-a", "@x/lib"),
+    pkg("packages/lib-b", "@x/lib"),
+    pkg("apps/web", "@x/web"),
+  ];
+  const depsOf = (u) => (u.name === "apps/web" ? ["@x/lib"] : []);
+
+  const { edges, diagnostics } = buildEdges(units, depsOf);
+
+  assert.deepEqual(edges, [
+    { from: "apps/web", to: "packages/lib-a", via: "workspace-dependency" },
+  ]);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].code, "CONFIG_CONFLICT");
+  assert.equal(diagnostics[0].path, "packages/lib-b");
+  assert.match(diagnostics[0].message, /"@x\/lib"/);
 });
 
 // ── populateDegrees: 3-node chain, explicit 0 written ───────────────────────
