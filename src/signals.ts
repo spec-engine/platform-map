@@ -150,7 +150,8 @@ function censusLanguages(dir: string): {
  * lockfile -> packageManager, and a bounded language census; absent facts are
  * omitted. An invalid package name drops only the packageName field (with a
  * MALFORMED_CONFIG diagnostic); every other signal is still returned. `locus`,
- * the unit's platform-relative path, is stamped onto emitted diagnostics.
+ * the unit's platform-qualified identity (its unique name), is stamped onto
+ * emitted diagnostics; walk-census diagnostic paths are re-anchored under it.
  */
 export function censusSignals(
   absUnitDir: string,
@@ -202,7 +203,15 @@ export function censusSignals(
   if (languageCensus.languages !== undefined) {
     signals.languages = languageCensus.languages;
   }
-  for (const d of languageCensus.diagnostics) diagnostics.push(d);
+  for (const d of languageCensus.diagnostics) {
+    if (locus === undefined) {
+      diagnostics.push(d);
+    } else {
+      const anchored =
+        d.path === undefined || d.path === "." ? locus : `${locus}/${d.path}`;
+      diagnostics.push({ ...d, path: anchored });
+    }
+  }
 
   return { signals, diagnostics, workspaceDepNames };
 }

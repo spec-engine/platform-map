@@ -64,14 +64,15 @@ function malformedConfigDiagnostic(
 }
 
 /** An unexpected throw from the census / monorepo recursion degrades to a
- *  MALFORMED_CONFIG diagnostic; `path` is the unit whose enrichment failed. */
-function censusFailureDiagnostic(unitPath: string, error: unknown): Diagnostic {
+ *  MALFORMED_CONFIG diagnostic; `path` is the name of the unit whose
+ *  enrichment failed. */
+function censusFailureDiagnostic(unitName: string, error: unknown): Diagnostic {
   const reason = error instanceof Error ? error.message : String(error);
   return {
     code: "MALFORMED_CONFIG",
     severity: "warning",
-    path: unitPath,
-    message: `MALFORMED_CONFIG: signal census failed for unit "${unitPath}": ${reason}`,
+    path: unitName,
+    message: `MALFORMED_CONFIG: signal census failed for unit "${unitName}": ${reason}`,
   };
 }
 
@@ -228,7 +229,7 @@ function enrichUnit(
   // in output; recursion stays conventional under the overridden parent dir.
   const absDir = absDirOverride ?? path.join(root, unit.path);
 
-  const census = censusSignals(absDir, unit.path);
+  const census = censusSignals(absDir, unit.name);
   applyCensusSignals(unit, census.signals);
   for (const d of census.diagnostics) diagnostics.push(d);
 
@@ -512,7 +513,7 @@ export async function map(
       ) {
         throw error;
       }
-      extraDiagnostics.push(censusFailureDiagnostic(unit.path, error));
+      extraDiagnostics.push(censusFailureDiagnostic(unit.name, error));
     }
   }
 
