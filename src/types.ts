@@ -9,7 +9,7 @@
  *  platform's constituent repo can itself be a monorepo. */
 export type Mode = "single-repo" | "multi-repo" | "monorepo";
 
-// ── Signals (facts, never judgments) ──────────────────────────────────────
+// ── Signals (observed; role derivation reads these) ───────────────────────
 /** Every field optional; absent means "not determined", never "false".
  *  Absence is never a negative assertion (MODEL-02). */
 export interface UnitSignals {
