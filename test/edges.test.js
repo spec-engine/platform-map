@@ -111,6 +111,52 @@ test("a duplicate packageName within a sibling set emits CONFIG_CONFLICT; first 
   assert.match(diagnostics[0].message, /"@x\/lib"/);
 });
 
+// ── Losing claimant self-reference: no phantom edge to the winner (EDGE-03) ──
+
+test("a losing duplicate-packageName claimant depending on its OWN name yields NO edge to the winner", () => {
+  const units = [
+    pkg("packages/lib-a", "@x/lib"),
+    pkg("packages/lib-b", "@x/lib"),
+  ];
+  // lib-b lost the "@x/lib" slot and self-references its own package name.
+  const depsOf = (u) => (u.name === "packages/lib-b" ? ["@x/lib"] : []);
+
+  const { edges, diagnostics } = buildEdges(units, depsOf);
+
+  assert.deepEqual(edges, []);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].code, "CONFIG_CONFLICT");
+  assert.equal(diagnostics[0].path, "packages/lib-b");
+});
+
+test("losing the slot does not mute the unit's other deps: the loser's edge to a third package survives", () => {
+  const units = [
+    pkg("packages/lib-a", "@x/lib"),
+    pkg("packages/lib-b", "@x/lib"),
+    pkg("packages/lib-c", "@x/c"),
+  ];
+  const depsOf = (u) =>
+    u.name === "packages/lib-b" ? ["@x/lib", "@x/c"] : [];
+
+  const { edges } = buildEdges(units, depsOf);
+
+  assert.deepEqual(edges, [
+    { from: "packages/lib-b", to: "packages/lib-c", via: "workspace-dependency" },
+  ]);
+});
+
+test("the winning claimant depending on its own package name still yields no edge", () => {
+  const units = [
+    pkg("packages/lib-a", "@x/lib"),
+    pkg("packages/lib-b", "@x/lib"),
+  ];
+  const depsOf = (u) => (u.name === "packages/lib-a" ? ["@x/lib"] : []);
+
+  const { edges } = buildEdges(units, depsOf);
+
+  assert.deepEqual(edges, []);
+});
+
 // ── populateDegrees: 3-node chain, explicit 0 written ───────────────────────
 
 test("populateDegrees writes workspaceInDegree/workspaceOutDegree (0 included) over a 3-node chain", () => {
