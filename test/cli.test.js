@@ -296,6 +296,42 @@ test("init --yes on an already-written dir: exit 1, refuses to clobber, file unc
   }
 });
 
+// ── CLI-07 (WR-03): POSIX -- reaches a dir named like a subcommand; a
+// subcommand token after the dir is a usage error, never a command reorder ──
+
+test("--json -- detect: maps the child dir literally named detect (map shape, not detect())", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-cli07-"));
+  try {
+    const child = path.join(tmp, "detect");
+    fs.mkdirSync(child);
+    fs.writeFileSync(
+      path.join(child, "package.json"),
+      `${JSON.stringify({ name: "detect", version: "0.0.0" })}\n`,
+    );
+    const r = run(["--json", "--", "detect"], { cwd: tmp });
+    assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+    let parsed;
+    assert.doesNotThrow(() => {
+      parsed = JSON.parse(r.stdout);
+    });
+    assert.equal(parsed.name, "detect", "the dir named detect is the root");
+    assert.ok(
+      Object.hasOwn(parsed, "units"),
+      "map() output carries units (detect() JSON has no units key)",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("subcommand token after the dir positional → exit 1, usage error on stderr, empty stdout", () => {
+  const r = run(["somedir", "graph"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /unexpected argument: graph/);
+  assert.match(r.stderr, /usage:/);
+  assert.equal(r.stdout, "");
+});
+
 test("init without --yes in a non-TTY (spawned): exit 1, /--yes/ on stderr, writes nothing, no hang", () => {
   const tmp = seedSingleRepo();
   try {
