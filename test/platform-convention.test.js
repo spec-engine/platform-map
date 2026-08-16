@@ -536,6 +536,63 @@ test("malformed platform-map.local.json -> MALFORMED_CONFIG warning, never a thr
   }
 });
 
+test("CR-01/SEC-06: escaping definition member paths yield exactly the adapter's UNIT_PATH_ESCAPE; the drift check never reads the escaped location", async () => {
+  const outer = mktree();
+  try {
+    // A marker OUTSIDE the platform root whose content would leak into
+    // drift diagnostics if the escaped path were ever read.
+    writeJson(path.join(outer, "outside", "platform-map.json"), {
+      platform: "WRONG",
+      root: "..",
+    });
+
+    const plat = path.join(outer, "plat");
+    gitDir(plat);
+    writeJson(path.join(plat, "platform-map.json"), {
+      name: "acme",
+      members: [
+        { name: "esc", path: "../outside" },
+        { name: "abs", path: "/etc" },
+        { name: "real" },
+      ],
+    });
+    gitDir(path.join(plat, "real"));
+
+    const pm = await map(plat, { boundary: outer, refProbe: false });
+
+    // exactly one UNIT_PATH_ESCAPE per escaping member, each emitted once
+    const escapes = pm.diagnostics.filter((d) => d.code === "UNIT_PATH_ESCAPE");
+    assert.deepEqual(
+      escapes.map((d) => d.path).sort(),
+      ["../outside", "/etc"],
+    );
+
+    // the outside marker's content never leaks, and no missing-member entry
+    // is fabricated for an escaped declaration
+    const tainted = pm.diagnostics.filter(
+      (d) =>
+        d.code === "PLATFORM_DRIFT" &&
+        ["esc", "abs", "../outside", "/etc", "WRONG"].some(
+          (needle) => d.path.includes(needle) || d.message.includes(needle),
+        ),
+    );
+    assert.deepEqual(tainted, []);
+
+    assert.ok(pm.units.every((u) => u.name !== "esc" && u.name !== "abs"));
+    const real = pm.units.find((u) => u.name === "real");
+    assert.ok(real);
+    assert.equal(real.path, "real");
+    assertNoAbsolutePaths(pm, outer);
+
+    assert.equal(
+      toJSON(await map(plat, { boundary: outer, refProbe: false })),
+      toJSON(await map(plat, { boundary: outer, refProbe: false })),
+    );
+  } finally {
+    fs.rmSync(outer, { recursive: true, force: true });
+  }
+});
+
 test("rung-1/2 firewall: a self-described repo inside a platform maps standalone, byte-identical to before", async () => {
   const parent = mktree();
   try {
