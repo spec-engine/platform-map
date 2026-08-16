@@ -101,9 +101,12 @@ test("map() over a ReDoS-glob workspace manifest resolves bounded and emits UNMA
 // and never enumerate the cycle-linked dirs as units — the no-follow contract
 // holds end-to-end, not just in walk() in isolation.
 test("map() over a symlink cycle resolves bounded and never enumerates the linked dirs as units (T-05-05)", async () => {
-  const root = fs.mkdtempSync(
+  // Wrapper dir isolates the run from concurrent tests' tmpdir fixtures.
+  const parent = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-adv-cycle-"),
   );
+  const root = path.join(parent, "root");
+  fs.mkdirSync(root);
   try {
     fs.writeFileSync(
       path.join(root, "pnpm-workspace.yaml"),
@@ -151,7 +154,7 @@ test("map() over a symlink cycle resolves bounded and never enumerates the linke
       "cycle-linked dirs must never be enumerated as units",
     );
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 

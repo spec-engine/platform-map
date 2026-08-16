@@ -1,6 +1,6 @@
-# platform-map — Unit Model & API Design (Draft)
+# platform-map — Unit Model & API Design
 
-**Status:** draft for review · **Companion:** BRIEF.md (decisions D1–D8), PLAN.md
+**Companion:** BRIEF.md (decisions D1–D8)
 **Scope:** the public contract — types, functions, CLI — checked against what Dark Factory, Spec Engine, and Clarity Audit would each need to migrate onto it. Two new decisions (D9, D10) surfaced while writing this; they're appended to the decision register at the bottom and mirrored into BRIEF.md.
 
 ---

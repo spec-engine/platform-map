@@ -1,41 +1,16 @@
-// CFG-05: the spec-engine adapter — reads <root>/spec-engine.member.json and
-// expands its `members` glob into platform-relative sub-member units. It
-// discards SE tool semantics entirely: the required `specs` pin, the member
-// config's `ignore` array, and any `spec-engine.platform.json` manifest never
-// enter the model (principle 8). It keeps exactly one config fact — `members`
-// (the sub-member glob) — and surfaces one linkage signal, `hasSpecEngineConfig`.
-//
-// RED-108 (AC4) ignore-under-expansion semantics, the normative statement SE's
-// swap ticket (RED-95) conforms to: the member config's `ignore` is a TAG-SCAN
-// hint (SE tool semantic — dirs excluded from SE's own tag/doc scans) and
-// NEVER filters `members`-glob expansion. This matches SE's engine exactly
-// (expandWorkspaceMembers takes no ignore parameter), reversing 0.1.0's WR-02
-// filter which invented a membership semantic SE never had. platform-map's
-// caller-level `opts.ignore` filters CHILD ENUMERATION only (sibling scan +
-// SE-platform per-child classification), never expansion inside a member.
-//
-// Members-glob expansion is ported OFF SE's Bun glob matcher onto the zero-dep,
-// ReDoS-safe `matchGlob` + bounded `walk` primitives (T-02-21/T-02-23): a
-// crafted glob can never catastrophically backtrack and a hostile/cyclic tree
-// is depth/entry-capped and never symlink-followed. Every matched entry must be
-// a DIRECTORY, must not be a basename `spec-engine` dir (never shadow the
-// canonical row), and must pass resolveWithinRoot (T-02-22) before it becomes a
-// unit.
-//
-// Deliberately NOT here:
-//  - SE's `skipped[]`/self-member/three-bucket NO_SPEC_CONFIG logic (that is the
-//    siblings adapter's UNCONFIGURED_SIBLING equivalent, not this adapter's job),
-//  - per-member pin extraction/inheritance (discarded — SE tool semantic),
-//  - the fs signal census incl. SEC-03 packageName validation (map()-owned —
-//    every sub-member flows through map()'s census, which already drops an
-//    invalid package.json `name` with a MALFORMED_CONFIG diagnostic and keeps
-//    the unit; adapters emit ONLY their linkage signal, never re-scan fs),
-//  - sorting (serialize.ts is the sole sort site) and edges (Phase 3, always []).
-//
-// Never-throw contract (SEC-01): an absent file is fine (empty result); an
-// unparseable/non-object config degrades to a MALFORMED_CONFIG diagnostic — only
-// canonical (config.ts) and RootNotFoundError throw. Untrusted parsed objects
-// are read by EXPLICIT known keys only, never spread (T-02-25).
+// CFG-05: the spec-engine adapter reads <root>/spec-engine.member.json and
+// expands its `members` glob (zero-dep, ReDoS-safe matchGlob over a bounded,
+// non-symlink-following walk) into platform-relative sub-member units. All
+// other SE tool semantics (the `specs` pin, `ignore`, any platform manifest)
+// are discarded. Sub-members carry ONLY the hasSpecEngineConfig linkage
+// signal: map()'s fs census owns every other signal, so adapters never
+// re-scan the tree.
+// Normative: the member config's `ignore` is an SE tag-scan hint and NEVER
+// filters `members`-glob expansion (SE's own expander takes no ignore
+// parameter); the caller-level `opts.ignore` filters child enumeration only.
+// Never-throw: an absent config yields an empty result; an unparseable or
+// non-object config degrades to MALFORMED_CONFIG. Untrusted parsed objects
+// are read by explicit known keys only, never spread.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -45,16 +20,14 @@ import { walk } from "../internal/walk.js";
 import type { Diagnostic, UnitSignals } from "../types.js";
 import type { AdapterContext, AdapterResult, PartialUnit } from "./index.js";
 
-/** The SE member-config filename — map()'s SE-platform sibling filter reuses
- *  it so "config-carrying" means the same file on both sides (RED-108). */
+/** The SE member-config filename; map()'s SE-platform sibling filter reuses
+ *  it so "config-carrying" means the same file on both sides. */
 export const MEMBER_CONFIG = "spec-engine.member.json";
 const SE_MAX_DEPTH = 16;
 const SE_MAX_ENTRIES = 10000;
 
-/** TEST-ONLY injectable seam (mirrors the workspace adapter's `deps`): lets the
- *  file-skip, spec-engine-skip, SEC-02-drop, and child-enumeration branches be
- *  exercised without materializing a hostile tree. Production callers never
- *  pass it. `readdir` feeds specEnginePlatform's child enumeration only. */
+/** Test-only injectable seam; production callers never pass it. `readdir`
+ *  feeds specEnginePlatform's child enumeration only. */
 export interface SpecEngineAdapterDeps {
   walk?: (dir: string) => { entries: string[]; diagnostics: Diagnostic[] };
   isDir?: (absPath: string) => boolean;
@@ -91,14 +64,8 @@ function readMembersGlob(config: Record<string, unknown>): string | null {
   return typeof raw === "string" ? raw : null;
 }
 
-/**
- * Reads `<root>/spec-engine.member.json` and, when a `members` glob is present,
- * expands it (via matchGlob over a bounded walk) into platform-relative
- * sub-member units. The root member itself becomes a `hasSpecEngineConfig:true`
- * unit. Absent file -> empty result; unparseable/non-object -> MALFORMED_CONFIG
- * diagnostic. Returns edges:[] and never sorts. `specs`/pins and `ignore` are
- * discarded (RED-108 AC4: ignore is scan-only, never a membership filter).
- */
+/** Expands the member config's `members` glob into sub-member units; the root
+ *  member itself becomes a `hasSpecEngineConfig:true` unit. */
 export function specEngineAdapter(
   root: string,
   _ctx: AdapterContext,
@@ -110,7 +77,7 @@ export function specEngineAdapter(
   try {
     text = fs.readFileSync(configPath, "utf8");
   } catch {
-    // Absent (or unreadable) member config is fine — SE members are optional.
+    // Absent (or unreadable) member config is fine: SE members are optional.
     return { partialUnits: [], edges: [], diagnostics: [] };
   }
 
@@ -126,7 +93,6 @@ export function specEngineAdapter(
     };
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    // Present but not a JSON object -> degrade, never throw.
     return {
       partialUnits: [],
       edges: [],
@@ -136,9 +102,9 @@ export function specEngineAdapter(
   const config = parsed as Record<string, unknown>;
 
   const memberSignals: Partial<UnitSignals> = { hasSpecEngineConfig: true };
-  const parentName = path.basename(root) || "(root)";
+  const parentName = path.basename(path.resolve(root)) || "(root)";
 
-  // The root dir carries spec-engine.member.json -> it is itself a member unit.
+  // The root dir carries the config, so it is itself a member unit.
   const partialUnits: PartialUnit[] = [
     {
       name: parentName,
@@ -169,20 +135,19 @@ export function specEngineAdapter(
 
   for (const rel of matched) {
     const subAbs = path.join(root, rel);
-    // A glob can match files — only DIRECTORIES are sub-members.
+    // A glob can match files; only directories are sub-members.
     if (!isDir(subAbs)) continue;
-    // Never shadow the canonical row: a basename `spec-engine` dir is skipped.
+    // A basename `spec-engine` dir never shadows the canonical row.
     if (path.basename(rel) === "spec-engine") continue;
-    // RED-108 (AC4): the member config's `ignore` is deliberately NOT applied
-    // here — it is an SE tag-scan hint, never a membership filter (see header).
-    // T-02-22: an expanded sub-member path escaping the root is dropped.
+    // `ignore` is deliberately not applied here (see header); a sub-member
+    // path escaping the root is dropped.
     const guard = resolveWithinRoot(root, rel);
     if (!guard.ok) {
       diagnostics.push(guard.diagnostic);
       continue;
     }
     partialUnits.push({
-      // Platform-relative naming: "<parentName>/<rel>" (SE's native convention).
+      // Platform-relative naming, SE's native convention.
       name: `${parentName}/${guard.relative}`,
       path: guard.relative,
       kind: "workspace-package",
@@ -213,33 +178,17 @@ function hasGitEntry(absDir: string): boolean {
 }
 
 /**
- * RED-108: the SE-platform variant — per-CHILD classification for a platform
- * directory that carries a canonical `spec-engine/` dir instead of a
- * platform-map.json. map() swaps this in at the spec-engine precedence rank
- * when SE-platform mode fires; it is never selected by the registry.
- *
- * Each child directory carrying `<child>/spec-engine.member.json` is run
- * through specEngineAdapter at the child root and re-anchored to the platform:
- * the child's root unit becomes `{ name: <child>, path: <child> }` and each
- * expanded sub-member keeps its `<child>/<rel>` name with the path re-anchored
- * to match. Child kind is "repo" iff the child has a `.git` entry (dir or
- * file); a config-carrying child with neither `.git` nor package.json is still
- * a confirmed member (SE fixture shape) — as "workspace-package", so map()'s
- * ref probe never runs git in a non-repo dir (git would ascend to an enclosing
- * repo and leak an environment-dependent ref).
- *
- * Config PRESENCE is what confirms membership: a child whose member config
- * exists but is malformed is still config-carrying — it gets the adapter's
- * MALFORMED_CONFIG diagnostic (re-anchored to `<child>/spec-engine.member.json`,
- * no unit, matching the adapter's own root behavior) and never falls through
- * to the sibling promotion gate.
- * Unconfigured children are NOT this function's job: map()'s widened sibling
- * scan feeds them to the merge promotion gate as UNCONFIGURED_SIBLING.
- *
- * Enumeration is dotdir-skipped, basename-`spec-engine`-skipped, and
- * `ctx.ignore`-filtered (child-enumeration filtering — never expansion, AC4).
- * Never throws (SEC-01); never sorts (serialize.ts is the sole sort site, so
- * readdir order can never leak into output).
+ * The SE-platform variant: per-child classification for a platform dir
+ * carrying a canonical `spec-engine/` dir instead of a platform-map.json;
+ * map() swaps it in directly, never the registry. Each config-carrying child
+ * runs through specEngineAdapter at its root and is re-anchored to the
+ * platform. Child kind is "repo" iff a `.git` entry exists; otherwise the
+ * child stays "workspace-package" so map()'s ref probe never runs git in a
+ * non-repo dir (git would ascend and leak an environment-dependent ref).
+ * Config PRESENCE confirms membership: a malformed member config is still
+ * config-carrying (re-anchored MALFORMED_CONFIG diagnostic, no unit), never
+ * falling through to the sibling promotion gate; unconfigured children are
+ * map()'s sibling-scan job. `ctx.ignore` filters child enumeration only.
  */
 export function specEnginePlatform(
   root: string,
@@ -254,7 +203,7 @@ export function specEnginePlatform(
 
   for (const name of readdir(root)) {
     if (name.startsWith(".")) continue;
-    // Never shadow the canonical row (same rule as expansion).
+    // A basename `spec-engine` dir never shadows the canonical row.
     if (name === "spec-engine") continue;
     if (
       ctx.ignore.length > 0 &&
@@ -263,7 +212,7 @@ export function specEnginePlatform(
       continue;
     }
     // Defense in depth against a hostile readdir seam smuggling ".." segments
-    // (a real fs.readdirSync entry is always a bare basename) — SEC-02.
+    // (a real fs.readdirSync entry is always a bare basename).
     const guard = resolveWithinRoot(root, name);
     if (!guard.ok) {
       diagnostics.push(guard.diagnostic);
@@ -271,8 +220,7 @@ export function specEnginePlatform(
     }
     const childAbs = path.join(root, name);
     if (!isDir(childAbs)) continue;
-    // Config PRESENCE confirms membership; readability is the adapter's own
-    // concern (absent -> empty result, so presence must be probed here).
+    // Presence must be probed here: the adapter treats absent as empty.
     if (!fs.existsSync(path.join(childAbs, MEMBER_CONFIG))) continue;
 
     const childKind: PartialUnit["kind"] = hasGitEntry(childAbs)
@@ -296,8 +244,7 @@ export function specEnginePlatform(
       }
     }
     for (const d of child.diagnostics) {
-      // Re-anchor a child-relative locus to the platform root; absolute paths
-      // never occur here (the adapter emits only relative loci).
+      // Re-anchor a child-relative locus to the platform root.
       diagnostics.push(
         d.path !== undefined && !path.isAbsolute(d.path)
           ? { ...d, path: `${guard.relative}/${d.path}` }

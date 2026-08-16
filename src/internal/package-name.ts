@@ -1,17 +1,11 @@
-// SEC-03: the package-name guard. Every package.json `name` that would flow
-// into a UnitSignals.packageName is validated here first — an invalid name is
-// DROPPED (the packageName signal is omitted) with a MALFORMED_CONFIG
-// diagnostic, while the unit itself is KEPT (its identity is its
-// platform-relative path, not its npm name; 02-RESEARCH Open Question 2).
-//
-// Exact analog of internal/path-guard.ts: a pure guard returning
-// `{ ok: true, … } | { ok: false, diagnostic }`, header citing the SEC-ID, no
-// I/O, never throws. The pattern is the SEC-03 regex verbatim
-// (/^@?[a-z0-9][a-z0-9._/-]*$/i): an optional leading scope `@`, a leading
-// alphanumeric, then alphanumerics plus the limited punctuation npm names use
-// (`.`, `_`, `/`, `-`). It is anchored with a single `*` quantifier — linear,
-// never a backtracking/ReDoS shape (T-02-08). Names only ever flow as JSON
-// data, never interpolated into a path or a shell.
+// [SEC-03] The package-name guard: every package.json `name` that would flow
+// into UnitSignals.packageName is validated here first. An invalid name is
+// DROPPED (the signal is omitted) with a MALFORMED_CONFIG diagnostic while
+// the unit itself is KEPT; unit identity is its platform-relative path, not
+// its npm name. The pattern allows an optional leading `@` scope, a leading
+// alphanumeric, then alphanumerics plus `.`, `_`, `/`, `-`; anchored with a
+// single `*` quantifier, so matching is linear, never a backtracking shape.
+// Names only ever flow as JSON data, never into a path or a shell.
 
 import type { Diagnostic } from "../types.js";
 
@@ -22,17 +16,11 @@ export type ValidatePackageNameResult =
 const PACKAGE_NAME_PATTERN = /^@?[a-z0-9][a-z0-9._/-]*$/i;
 
 /**
- * Validates a package.json `name` against the SEC-03 pattern. On success
- * returns the name unchanged; on failure returns a MALFORMED_CONFIG (severity
- * `warning`) diagnostic. Pure, never throws — an invalid name degrades to a
- * dropped signal + diagnostic, never an exception.
- *
- * `locus` is the unit's platform-relative path (WR-01): it is stamped onto the
- * diagnostic's `path` so the failure reports WHICH unit produced it AND so
- * serialize.ts's `compareDiagnostics` (which tie-breaks on severity,code,path)
- * stays total for multiple invalid-name diagnostics — without a locus two such
- * diagnostics collide on the sort key and their order becomes iteration-order
- * dependent.
+ * Validates a package.json `name`. On success returns the name unchanged; on
+ * failure returns a MALFORMED_CONFIG (warning) diagnostic instead of throwing.
+ * `locus` (the unit's platform-relative path) is stamped onto the diagnostic's
+ * `path` so the failure names its unit and so the diagnostic sort key
+ * (severity, code, path) stays total when multiple invalid names occur.
  */
 export function validatePackageName(
   name: string,

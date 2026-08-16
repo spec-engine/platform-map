@@ -262,7 +262,7 @@ test("map() maps a multi-repo-of-monorepos tree recursively (DET-02 composabilit
     const sibA = siblings.find((u) => u.name === "sibling-a");
     assert.deepEqual(
       sibA.units.map((u) => u.name),
-      ["packages/api", "packages/core"],
+      ["sibling-a/packages/api", "sibling-a/packages/core"],
     );
     for (const child of sibA.units) {
       assert.equal(child.kind, "workspace-package");
@@ -274,18 +274,22 @@ test("map() maps a multi-repo-of-monorepos tree recursively (DET-02 composabilit
     const roleByName = {};
     for (const sib of siblings)
       for (const child of sib.units) roleByName[child.name] = child.role;
-    assert.equal(roleByName["packages/core"], "library");
-    assert.equal(roleByName["packages/api"], "app");
+    assert.equal(roleByName["sibling-a/packages/core"], "library");
+    assert.equal(roleByName["sibling-a/packages/api"], "app");
 
     // Edges are scoped PER SIBLING SET: @sibA/api→@sibA/core and
     // @sibB/web→@sibB/lib; NO cross-repo edge. from/to are Unit.name paths.
     assert.deepEqual(pm.edges, [
       {
-        from: "packages/api",
-        to: "packages/core",
+        from: "sibling-a/packages/api",
+        to: "sibling-a/packages/core",
         via: "workspace-dependency",
       },
-      { from: "packages/web", to: "packages/lib", via: "workspace-dependency" },
+      {
+        from: "sibling-b/packages/web",
+        to: "sibling-b/packages/lib",
+        via: "workspace-dependency",
+      },
     ]);
 
     // Portability: every unit.path is platform-relative — no absolute path

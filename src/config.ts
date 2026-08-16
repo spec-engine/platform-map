@@ -1,20 +1,10 @@
-// CFG-02 / SEC-01: the hand-rolled, ZERO-dependency canonical-config validator.
-// `readCanonicalConfig` is the ONE hard-error path in the library besides
-// RootNotFoundError: a PRESENT `platform-map.json` that cannot be read, parsed,
-// or shape-validated throws MalformedConfigError with a DISTINCT location-tagged
-// message per stage (read / parse / validate). An ABSENT file returns `null`
-// (config is optional forever, D8). Adapter source files NEVER throw — they
-// degrade to MALFORMED_CONFIG diagnostics; canonical is the sole exception.
-//
-// Deliberately NOT here:
-//  - the overrides-references-a-real-unit check. The validator cannot know the
-//    assembled unit set, so that honesty check lives in map() after assembly
-//    (Assumption A3). Here we validate only the SHAPE of overrides.
-//  - any dependency (no zod): the shape checks are hand-rolled, mirroring the
-//    object-shape guard of detect.ts's readJsonObject (L54-73).
-//  - absolute paths in thrown messages: the file is always <root>/platform-map.json
-//    so the message carries the fixed root-relative name, never the absolute path
-//    (errors.ts §5 discipline).
+// Hand-rolled, zero-dependency validators for platform-map.json and
+// platform-map.local.json. readCanonicalConfig is the one hard-error path
+// besides RootNotFoundError: a present file that fails read, parse, or shape
+// validation throws MalformedConfigError with a stage-tagged message; absent
+// returns null (config is optional forever). Overrides are shape-checked
+// only; the references-a-real-unit check lives in map(), which knows the
+// assembled unit set. Messages carry the fixed root-relative filename only.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -28,21 +18,18 @@ import type {
   Role,
 } from "./types.js";
 
-/** The canonical config filename, always resolved directly under `root`. */
 const CONFIG_FILENAME = "platform-map.json";
 
-/** The per-user local location-override filename (RED-97 IP-1, D-02). */
+/** The per-user local location-override filename. */
 const LOCAL_CONFIG_FILENAME = "platform-map.local.json";
 
-/** The valid `Role` values a per-unit override may declare (types.ts). */
 const ROLE_VALUES: ReadonlySet<string> = new Set<Role>([
   "library",
   "app",
   "unknown",
 ]);
 
-/** Object keys that must never be copied from untrusted parsed input — assigning
- *  them onto a plain object is the classic prototype-pollution sink (T-02-16). */
+/** Never copied from untrusted input: the classic prototype-pollution sink. */
 const DANGEROUS_KEYS: ReadonlySet<string> = new Set([
   "__proto__",
   "constructor",
@@ -57,10 +44,8 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** WR-01: extracts ONLY the errno code from an fs error. Node interpolates the
- *  ABSOLUTE file path into fs error messages (`EACCES ... open '/Users/...'`),
- *  so `e.message` must never reach a reason string that can land in
- *  `pm.diagnostics` (D-02/§5: member names and root-relative paths only). */
+/** errno code only: Node interpolates the absolute file path into fs error
+ *  messages, so `e.message` must never reach a diagnostics reason string. */
 function fsErrorCode(e: unknown): string {
   if (e instanceof Error && "code" in e) {
     const code = (e as NodeJS.ErrnoException).code;
@@ -69,12 +54,8 @@ function fsErrorCode(e: unknown): string {
   return "unknown";
 }
 
-/**
- * Hand-rolled strict shape check over the KNOWN keys of PlatformMapConfig.
- * Returns a human-readable reason string on the first violation, or `null` when
- * the shape is valid. Unknown top-level keys are IGNORED (forward-compat) — only
- * known-key shapes are validated. Reads (never spreads) the parsed object.
- */
+/** Returns a reason string on the first shape violation, else null. Unknown
+ *  top-level keys are ignored (forward-compat). */
 function validateShape(raw: unknown): string | null {
   if (!isPlainObject(raw)) {
     return "top-level value must be a JSON object";
@@ -130,13 +111,8 @@ function validateShape(raw: unknown): string | null {
   return null;
 }
 
-/**
- * Builds a sanitized PlatformMapConfig copying ONLY known fields explicitly from
- * the (already shape-validated) parsed object — never spreads untrusted keys
- * (prototype-pollution guard, T-02-16) and drops unknown top-level keys
- * (forward-compat). Dangerous override keys (__proto__/constructor/prototype)
- * are skipped so they can never reach a plain-object assignment sink.
- */
+/** Copies only known fields from the shape-validated parse; never spreads
+ *  untrusted keys, and skips DANGEROUS_KEYS. */
 function copyKnownFields(raw: Record<string, unknown>): PlatformMapConfig {
   const config: PlatformMapConfig = {};
 
@@ -175,31 +151,27 @@ function copyKnownFields(raw: Record<string, unknown>): PlatformMapConfig {
   return config;
 }
 
-// ── RED-97 (IP-1): the discriminated platform-map.json shapes ──────────────
-// One filename, three deterministically distinguishable shapes, discriminated
-// by key presence IN THIS ORDER: `members` present -> platform definition;
-// else `platform` present -> member marker; else -> unit-level config (today's
-// shape, byte-for-byte unchanged behavior).
+// One filename, three shapes, discriminated by key presence IN THIS ORDER:
+// `members` present -> platform definition; else `platform` present -> member
+// marker; else -> unit-level config.
 
-/** The strict discriminated read result (readPlatformFile). The marker kind
- *  also carries the coexisting sanitized rung-1/2 config — `name`/`ignore`/
- *  `overrides` keep their meaning when the member maps standalone (fallback). */
+/** The strict discriminated read result. The marker kind also carries the
+ *  coexisting sanitized unit-level config, used when the member maps
+ *  standalone. */
 export type PlatformFileResult =
   | { kind: "absent" }
   | { kind: "config"; config: PlatformMapConfig }
   | { kind: "marker"; marker: MemberMarker; config: PlatformMapConfig }
   | { kind: "definition"; definition: PlatformDefinition };
 
-/** The lenient classification: PlatformFileResult plus a never-throwing
- *  `malformed` kind carrying the stage-tagged reason (the exact message the
- *  strict reader would have thrown). Consumed by the upward resolver's sniff,
- *  where files at OTHER directories must degrade, never throw (IP-3/IP-8). */
+/** PlatformFileResult plus a never-throwing `malformed` kind carrying the
+ *  stage-tagged reason; files sniffed at other directories during the upward
+ *  walk must degrade, never throw. */
 export type PlatformFileClassification =
   | PlatformFileResult
   | { kind: "malformed"; reason: string };
 
-/** Keys forbidden alongside `members` (IP-1 shape 1): a definition is identity
- *  only — it never doubles as a marker or a unit-level config. */
+/** A definition is identity only; these keys never coexist with `members`. */
 const FORBIDDEN_WITH_MEMBERS: readonly string[] = [
   "platform",
   "root",
@@ -207,8 +179,7 @@ const FORBIDDEN_WITH_MEMBERS: readonly string[] = [
   "overrides",
 ];
 
-/** Validates + sanitizes the `members`-keyed definition shape. Returns a
- *  reason string on the first violation (config.ts three-stage style). */
+/** Validates + sanitizes the `members`-keyed definition shape. */
 function validateDefinition(
   raw: Record<string, unknown>,
 ): { definition: PlatformDefinition } | { reason: string } {
@@ -234,9 +205,8 @@ function validateDefinition(
     if (typeof m.name !== "string" || m.name.length === 0) {
       return { reason: `"members[${i}].name" must be a non-empty string` };
     }
-    // WR-06: a definition is an identity list — everything downstream keys by
-    // name (merge's byName, diskDirByName, drift checks), so a duplicate
-    // identity is a config authoring error, rejected like any shape violation.
+    // Everything downstream keys members by name, so a duplicate identity is
+    // an authoring error, rejected like any shape violation.
     if (seenNames.has(m.name)) {
       return {
         reason: `"members[${i}].name" duplicates member "${m.name}"`,
@@ -250,7 +220,7 @@ function validateDefinition(
         };
       }
     }
-    // Copy only known fields explicitly (prototype-pollution guard, T-02-16).
+    // Copy only known fields explicitly (prototype-pollution guard).
     const out: { name: string; path?: string } = { name: m.name };
     if (typeof m.path === "string") out.path = m.path;
     members.push(out);
@@ -271,8 +241,7 @@ function validateDefinition(
 }
 
 /** Validates + sanitizes the `platform`-keyed marker shape, including the
- *  coexisting rung-1/2 config keys (name/ignore/overrides — validated with the
- *  exact unit-config rules). `root` defaults to ".." (D-03). */
+ *  coexisting unit-config keys. `root` defaults to "..". */
 function validateMarker(
   raw: Record<string, unknown>,
 ): { marker: MemberMarker; config: PlatformMapConfig } | { reason: string } {
@@ -287,9 +256,6 @@ function validateMarker(
       return { reason: `"root" must be a non-empty string when present` };
     }
   }
-  // The coexisting rung-1/2 keys keep their meaning when the member maps
-  // standalone (fallback path) — validate them with the unit-config rules
-  // (`units` is already excluded above, so validateShape sees none).
   const reason = validateShape(raw);
   if (reason !== null) return { reason };
   const marker: MemberMarker = {
@@ -299,18 +265,13 @@ function validateMarker(
   return { marker, config: copyKnownFields(raw) };
 }
 
-/**
- * Reads and classifies `<root>/platform-map.json` WITHOUT throwing (the shared
- * engine under both the strict readPlatformFile and the resolver's lenient
- * sniff). Stage-tagged failure reasons match the strict thrown messages
- * byte-for-byte; all messages carry the fixed root-relative filename only,
- * never an absolute path (§5).
- */
+/** Never-throwing classification of `<root>/platform-map.json`: the shared
+ *  engine under both the strict readPlatformFile and the resolver's lenient
+ *  sniff. Failure reasons match the strict thrown messages byte-for-byte. */
 export function classifyPlatformFile(root: string): PlatformFileClassification {
   const p = path.join(root, CONFIG_FILENAME);
-  // The existsSync gate is load-bearing: it separates "truly absent" from
-  // "present but unreadable" — a race between the two windows only ever
-  // downgrades to the read-failure classification, never a silent skip.
+  // existsSync separates "truly absent" from "present but unreadable"; a race
+  // between the two only downgrades to the read-failure kind, never a skip.
   if (!fs.existsSync(p)) return { kind: "absent" };
 
   let text: string;
@@ -319,8 +280,6 @@ export function classifyPlatformFile(root: string): PlatformFileClassification {
   } catch (e) {
     return {
       kind: "malformed",
-      // Code only — never the fs error message, which embeds the absolute
-      // path (WR-01); this reason can reach pm.diagnostics via the resolver.
       reason: `${CONFIG_FILENAME} at ${CONFIG_FILENAME} could not be read (${fsErrorCode(e)})`,
     };
   }
@@ -342,7 +301,7 @@ export function classifyPlatformFile(root: string): PlatformFileClassification {
     };
   }
 
-  // IP-1 discrimination, checked in this order.
+  // Shape discrimination, checked in this order.
   if (raw.members !== undefined) {
     const r = validateDefinition(raw);
     if ("reason" in r) {
@@ -375,13 +334,8 @@ export function classifyPlatformFile(root: string): PlatformFileClassification {
   return { kind: "config", config: copyKnownFields(raw) };
 }
 
-/**
- * The STRICT discriminated read of `<root>/platform-map.json` (RED-97 IP-1):
- * same three-stage read/parse/validate MalformedConfigError discipline as
- * readCanonicalConfig always had, extended with the definition/marker
- * discrimination and forbidden-key-combination reasons. Absent -> kind
- * "absent" (config is optional forever, D8).
- */
+/** The strict read: classifyPlatformFile with `malformed` escalated to
+ *  MalformedConfigError. Absent -> kind "absent"; config is optional forever. */
 export function readPlatformFile(root: string): PlatformFileResult {
   const classified = classifyPlatformFile(root);
   if (classified.kind === "malformed") {
@@ -391,22 +345,11 @@ export function readPlatformFile(root: string): PlatformFileResult {
 }
 
 /**
- * Reads and validates `<root>/platform-map.json`, the authoritative canonical
- * config (CFG-01/CFG-02). Three-stage gate:
- *   1. absent           -> null (config optional forever, D8; no throw)
- *   2. present, unread  -> throw MalformedConfigError "... could not be read"
- *   3. present, unparse -> throw MalformedConfigError "... failed to parse as JSON"
- *   4. wrong shape      -> throw MalformedConfigError "... failed validation: <reason>"
- * On success returns a SANITIZED config (known fields only). All thrown messages
- * carry the root-relative filename only, never an absolute path (§5).
- *
- * RED-97: implemented over readPlatformFile so unit-level config behavior is
- * byte-for-byte unchanged. A marker returns its coexisting rung-1/2 config
- * (fallback path). A DEFINITION converts members to declared units with `path`
- * defaulting to the member name (the child-dir convention) and carries
- * name/ignore — this is the D-05 canonical-rank reuse: a definition rides the
- * existing canonical machinery (declared units gate sibling promotion, D-04)
- * with zero merge changes.
+ * Reads and validates the authoritative canonical config: absent -> null,
+ * malformed -> throw, valid -> sanitized config. A marker returns its
+ * coexisting config; a definition converts members to declared units with
+ * `path` defaulting to the member name (the child-dir convention), so a
+ * definition rides the existing canonical machinery unchanged.
  */
 export function readCanonicalConfig(root: string): PlatformMapConfig | null {
   const result = readPlatformFile(root);
@@ -433,9 +376,8 @@ export function readCanonicalConfig(root: string): PlatformMapConfig | null {
   }
 }
 
-/** The lenient local-config read result (readLocalConfig): a malformed or
- *  wrong-shaped `platform-map.local.json` degrades to a diagnostic-shaped
- *  failure — per-user machine state must never brick the map (IP-1). */
+/** A malformed platform-map.local.json degrades to a diagnostic; per-user
+ *  machine state must never brick the map. */
 export type ReadLocalConfigResult =
   | { ok: true; config: PlatformLocalConfig }
   | { ok: false; diagnostic: Diagnostic };
@@ -450,12 +392,10 @@ function localConfigDiagnostic(detail: string): Diagnostic {
 }
 
 /**
- * Reads `<root>/platform-map.local.json` (RED-97 IP-1, D-02): the per-user
- * disk-location override file. LENIENT — absent returns null; a malformed
- * read/parse/shape returns `{ ok: false, diagnostic }` (a MALFORMED_CONFIG
- * warning carrying the fixed root-relative filename, never an absolute path)
- * and NEVER throws. Valid input returns a sanitized PlatformLocalConfig with
- * dangerous keys (__proto__/constructor/prototype) silently skipped.
+ * Reads `<root>/platform-map.local.json`, the per-user disk-location override
+ * file. Lenient: absent -> null; malformed -> `{ ok: false, diagnostic }`,
+ * never a throw. Valid input returns a sanitized PlatformLocalConfig,
+ * dangerous keys skipped.
  */
 export function readLocalConfig(root: string): ReadLocalConfigResult | null {
   const p = path.join(root, LOCAL_CONFIG_FILENAME);
@@ -467,7 +407,6 @@ export function readLocalConfig(root: string): ReadLocalConfigResult | null {
   } catch (e) {
     return {
       ok: false,
-      // Code only — never the fs error message (absolute-path leak, WR-01).
       diagnostic: localConfigDiagnostic(
         `could not be read (${fsErrorCode(e)})`,
       ),

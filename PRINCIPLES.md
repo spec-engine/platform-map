@@ -29,7 +29,7 @@ trivial mappings.
 packaging gates; `serialize.test.js`, `canonical.test.js`.
 **Status: real.**
 
-## 2. Facts, not opinions
+## 2. Observed signals, derived roles
 
 The core reports observable signals. Judgments (`role`) are derived views with
 documented rules, recomputable by anyone via the exported `deriveRole()`, and
@@ -145,7 +145,7 @@ members carry committed markers; disk locations are per-user
 | Pillar | Requirements | Status |
 |---|---|---|
 | 1 One vocabulary | catalog anchor, PMAP-007, PMAP-008 | real |
-| 2 Facts, not opinions | PMAP-002, PMAP-003 | real |
+| 2 Observed signals, derived roles | PMAP-002, PMAP-003 | real |
 | 3 Detection proposes, config disposes | PMAP-004 (gate), merge precedence | real |
 | 4 Honest about unknowns | PMAP-004 | real |
 | 5 Deterministic to the byte | PMAP-001 | real |

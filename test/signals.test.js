@@ -5,9 +5,12 @@
 // test/fixtures/signals (no .git needed).
 
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { deriveRole } from "../dist/index.mjs";
 import { censusSignals } from "../dist/signals.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +43,22 @@ test("censusSignals omits absent facts entirely (never false) — MODEL-02", () 
   assert.deepEqual(signals.languages, ["go"]);
 });
 
+test("an explicit private:false is recorded as a fact and defeats role rule 3", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-signals-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "pub-pkg", private: false, main: "index.js" }),
+    );
+    const { signals } = censusSignals(dir);
+    assert.equal(signals.private, false);
+    assert.equal(signals.hasExports, true);
+    assert.notEqual(deriveRole(signals), "library");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("censusSignals drops an invalid package name but keeps every other signal (SEC-03)", () => {
   const { signals, diagnostics } = censusSignals(
     path.join(signalsDir, "bad-name"),
@@ -63,6 +82,26 @@ test("censusSignals stamps the provided locus onto an invalid-name diagnostic (W
   const malformed = diagnostics.find((d) => d.code === "MALFORMED_CONFIG");
   assert.ok(malformed, "expected a MALFORMED_CONFIG diagnostic");
   assert.equal(malformed.path, "packages/bad-name");
+});
+
+// DIAG-01: walk-census diagnostics (CENSUS_TRUNCATED) are re-anchored under
+// the locus so nested units report platform-qualified paths.
+test("censusSignals prefixes a CENSUS_TRUNCATED path with the locus (DIAG-01)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-signals-"));
+  try {
+    let deep = dir;
+    for (let i = 1; i <= 17; i++) deep = path.join(deep, `d${i}`);
+    fs.mkdirSync(deep, { recursive: true });
+    const { diagnostics } = censusSignals(dir, "mono/packages/app");
+    const truncated = diagnostics.find((d) => d.code === "CENSUS_TRUNCATED");
+    assert.ok(truncated, "expected a CENSUS_TRUNCATED diagnostic");
+    assert.ok(
+      truncated.path.startsWith("mono/packages/app/"),
+      `expected a locus-prefixed path, got ${truncated.path}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("censusSignals leaves the invalid-name diagnostic path unset when no locus is given", () => {
@@ -97,9 +136,12 @@ test("censusSignals omits packageManager and languages for a bare directory", ()
   assert.equal(Object.hasOwn(signals, "languages"), false);
 });
 
-test("censusSignals never sets a signal to a literal false", () => {
+// ROLE-01: `private` is the one boolean signal where an explicit false is a
+// determined fact, so it is excepted from the never-false rule.
+test("censusSignals never sets a boolean presence signal to a literal false (private excepted)", () => {
   const { signals } = censusSignals(path.join(signalsDir, "plain"));
-  for (const value of Object.values(signals)) {
+  for (const [key, value] of Object.entries(signals)) {
+    if (key === "private") continue;
     assert.notEqual(value, false);
   }
 });

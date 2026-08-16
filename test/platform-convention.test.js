@@ -104,13 +104,13 @@ test("rung 3 at root: definition yields member units for mixed shapes (PMAP-011,
     assert.equal(mono.mode, "monorepo");
     assert.deepEqual(
       mono.units.map((u) => u.name),
-      ["packages/app", "packages/core"],
+      ["mono-lib/packages/app", "mono-lib/packages/core"],
     );
     // the monorepo member's internal edge is present
     assert.deepEqual(pm.edges, [
       {
-        from: "packages/app",
-        to: "packages/core",
+        from: "mono-lib/packages/app",
+        to: "mono-lib/packages/core",
         via: "workspace-dependency",
       },
     ]);
@@ -530,6 +530,109 @@ test("malformed platform-map.local.json -> MALFORMED_CONFIG warning, never a thr
     assert.equal(
       toJSON(await map(plat, { boundary: parent })),
       toJSON(await map(plat, { boundary: parent })),
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("CR-01/SEC-06: escaping definition member paths yield exactly the adapter's UNIT_PATH_ESCAPE; the drift check never reads the escaped location", async () => {
+  const outer = mktree();
+  try {
+    // A marker OUTSIDE the platform root whose content would leak into
+    // drift diagnostics if the escaped path were ever read.
+    writeJson(path.join(outer, "outside", "platform-map.json"), {
+      platform: "WRONG",
+      root: "..",
+    });
+
+    const plat = path.join(outer, "plat");
+    gitDir(plat);
+    writeJson(path.join(plat, "platform-map.json"), {
+      name: "acme",
+      members: [
+        { name: "esc", path: "../outside" },
+        { name: "abs", path: "/etc" },
+        { name: "real" },
+      ],
+    });
+    gitDir(path.join(plat, "real"));
+
+    const pm = await map(plat, { boundary: outer, refProbe: false });
+
+    // exactly one UNIT_PATH_ESCAPE per escaping member, each emitted once
+    const escapes = pm.diagnostics.filter((d) => d.code === "UNIT_PATH_ESCAPE");
+    assert.deepEqual(escapes.map((d) => d.path).sort(), ["../outside", "/etc"]);
+
+    // the outside marker's content never leaks, and no missing-member entry
+    // is fabricated for an escaped declaration
+    const tainted = pm.diagnostics.filter(
+      (d) =>
+        d.code === "PLATFORM_DRIFT" &&
+        ["esc", "abs", "../outside", "/etc", "WRONG"].some(
+          (needle) => d.path.includes(needle) || d.message.includes(needle),
+        ),
+    );
+    assert.deepEqual(tainted, []);
+
+    assert.ok(pm.units.every((u) => u.name !== "esc" && u.name !== "abs"));
+    const real = pm.units.find((u) => u.name === "real");
+    assert.ok(real);
+    assert.equal(real.path, "real");
+    assertNoAbsolutePaths(pm, outer);
+
+    assert.equal(
+      toJSON(await map(plat, { boundary: outer, refProbe: false })),
+      toJSON(await map(plat, { boundary: outer, refProbe: false })),
+    );
+  } finally {
+    fs.rmSync(outer, { recursive: true, force: true });
+  }
+});
+
+test("CR-01/SEC-06: an escaping declaration cannot suppress the non-repo-child diagnostic for a real root child", async () => {
+  const parent = mktree();
+  try {
+    const plat = path.join(parent, "plat");
+    gitDir(plat);
+    writeJson(path.join(plat, "platform-map.json"), {
+      name: "acme",
+      members: [{ name: "x", path: "stray/../../outside" }, { name: "real" }],
+    });
+    gitDir(path.join(plat, "real"));
+    // a plain root child sharing the escaping path's first segment
+    fs.mkdirSync(path.join(plat, "stray"));
+
+    const pm = await map(plat, { boundary: parent, refProbe: false });
+
+    const nonRepo = pm.diagnostics.find(
+      (d) =>
+        d.code === "PLATFORM_DRIFT" &&
+        d.severity === "info" &&
+        d.message.startsWith("PLATFORM_DRIFT: non-repo child:"),
+    );
+    assert.ok(nonRepo, "non-repo child diagnostic must survive the escape");
+    assert.equal(nonRepo.path, "stray");
+
+    // the escaping member leaves exactly one UNIT_PATH_ESCAPE and no other trace
+    const escapes = pm.diagnostics.filter((d) => d.code === "UNIT_PATH_ESCAPE");
+    assert.deepEqual(
+      escapes.map((d) => d.path),
+      ["stray/../../outside"],
+    );
+    assert.ok(pm.units.every((u) => u.name !== "x"));
+    assert.ok(
+      pm.diagnostics.every(
+        (d) =>
+          d.code === "UNIT_PATH_ESCAPE" ||
+          (!d.message.includes('"x"') && !d.message.includes("outside")),
+      ),
+    );
+    assertNoAbsolutePaths(pm, parent);
+
+    assert.equal(
+      toJSON(await map(plat, { boundary: parent, refProbe: false })),
+      toJSON(await map(plat, { boundary: parent, refProbe: false })),
     );
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });

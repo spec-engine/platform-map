@@ -1,0 +1,4 @@
+{
+  "specs": "spec-engine@2",
+  "members": "packages/*"
+}

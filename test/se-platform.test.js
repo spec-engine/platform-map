@@ -16,8 +16,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { map } from "../dist/index.mjs";
 import { toJSON } from "../dist/internal/serialize.mjs";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 function mktree() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-sep-"));
@@ -150,6 +153,50 @@ test("SE-platform mode classifies children with the three-bucket contract (RED-1
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });
   }
+});
+
+// IDENT-03 (CR-01): an SE member that is ALSO a pnpm monorepo. The flat SE
+// sub-members own the identities; the nested workspace expansion agrees on
+// both identity and location, so it is deduped silently, never doubled.
+test("an SE member that is also a workspace monorepo maps to one unit per package (IDENT-03)", async () => {
+  const plat = path.join(here, "fixtures", "se-monorepo-overlap");
+  const pm = await map(plat, {
+    adapters: { siblings: false },
+    refProbe: false,
+  });
+
+  assert.deepEqual(
+    pm.units.map((u) => u.name),
+    ["svc", "svc/packages/x", "svc/packages/y"],
+  );
+  const svc = pm.units.find((u) => u.name === "svc");
+  assert.equal(svc.mode, "monorepo");
+  assert.equal(svc.units.length, 0);
+
+  assert.deepEqual(pm.edges, [
+    {
+      from: "svc/packages/y",
+      to: "svc/packages/x",
+      via: "workspace-dependency",
+    },
+  ]);
+  const x = pm.units.find((u) => u.name === "svc/packages/x");
+  const y = pm.units.find((u) => u.name === "svc/packages/y");
+  assert.equal(x.signals.workspaceInDegree, 1);
+  assert.equal(y.signals.workspaceOutDegree, 1);
+
+  // Two sources agreeing on the same identity at the same location is
+  // agreement, not conflict.
+  assert.ok(!pm.diagnostics.some((d) => d.code === "CONFIG_CONFLICT"));
+
+  const names = [];
+  (function collect(units) {
+    for (const u of units) {
+      names.push(u.name);
+      if (u.units.length > 0) collect(u.units);
+    }
+  })(pm.units);
+  assert.equal(new Set(names).size, names.length);
 });
 
 test("a platform-map.json definition wins over the spec-engine/ convention (RED-108 precedence)", async () => {

@@ -124,6 +124,48 @@ test("multi-repo classification + DET-02 composability + DET-05 ref:null", () =>
   }
 });
 
+test("sibling df-config.json is classified, not existence-checked: pointer-only sets hasDfPointer, full config populates conflict", () => {
+  const tempRoot = mkTempDir();
+  try {
+    for (const name of ["ptr-sib", "full-sib", "bad-sib", "plain-sib"]) {
+      const dir = path.join(tempRoot, name);
+      fs.mkdirSync(dir);
+      mkGitMarker(dir);
+    }
+    const writeDf = (sib, text) => {
+      const factory = path.join(tempRoot, sib, ".factory");
+      fs.mkdirSync(factory);
+      fs.writeFileSync(path.join(factory, "df-config.json"), text);
+    };
+    writeDf(
+      "ptr-sib",
+      JSON.stringify({ platform: { factoryDir: ".factory" } }),
+    );
+    writeDf(
+      "full-sib",
+      JSON.stringify({ platform: { factoryDir: ".factory", repos: [] } }),
+    );
+    writeDf("bad-sib", "{not json");
+
+    const d = detect(tempRoot, { scanRoot: "." });
+    const byName = Object.fromEntries(d.siblings.map((s) => [s.name, s]));
+
+    assert.equal(byName["ptr-sib"].hasDfPointer, true);
+    assert.equal(byName["ptr-sib"].conflict, null);
+    assert.equal(byName["full-sib"].hasDfPointer, false);
+    assert.equal(
+      byName["full-sib"].conflict,
+      "df-config.json is a full config, not a pointer",
+    );
+    assert.equal(byName["bad-sib"].hasDfPointer, false);
+    assert.equal(byName["bad-sib"].conflict, "df-config.json failed to parse");
+    assert.equal(byName["plain-sib"].hasDfPointer, false);
+    assert.equal(byName["plain-sib"].conflict, null);
+  } finally {
+    rmTempDir(tempRoot);
+  }
+});
+
 test("detect() finds a real sibling under the documented default scanRoot '..' and never reports root as its own sibling (CR-01/CR-02 regression)", () => {
   // Regression coverage for CR-01/CR-02: this deliberately does NOT pass a
   // scanRoot override (unlike the composability test above, which uses

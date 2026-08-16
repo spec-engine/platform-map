@@ -37,6 +37,58 @@ test("walk over a small tree returns entries sorted, no diagnostics under caps",
   }
 });
 
+test("node_modules and dot-prefixed dirs are pruned; dot-files still emitted", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-walk-"));
+  try {
+    fs.mkdirSync(path.join(root, "node_modules", "dep"), { recursive: true });
+    fs.writeFileSync(path.join(root, "node_modules", "dep", "index.js"), "");
+    fs.mkdirSync(path.join(root, ".git", "objects"), { recursive: true });
+    fs.mkdirSync(path.join(root, "packages", "a", "node_modules"), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(root, "packages", "a", "index.ts"), "");
+    fs.writeFileSync(path.join(root, ".gitignore"), "");
+
+    const result = walk(root, { maxDepth: 10, maxEntries: 1000 });
+    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(result.entries, [
+      ".gitignore",
+      "packages",
+      "packages/a",
+      "packages/a/index.ts",
+    ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("pruned dirs do not consume the maxEntries budget", () => {
+  function makeDirent(name, isDir) {
+    return {
+      name,
+      isSymbolicLink: () => false,
+      isDirectory: () => isDir,
+    };
+  }
+  const readdir = (dir) => {
+    if (dir === "/root") {
+      return [
+        makeDirent("node_modules", true),
+        makeDirent("real-1", false),
+        makeDirent("real-2", false),
+      ];
+    }
+    if (dir === "/root/node_modules") {
+      return Array.from({ length: 50 }, (_, i) => makeDirent(`dep-${i}`, true));
+    }
+    return [];
+  };
+
+  const result = walk("/root", { maxDepth: 10, maxEntries: 2, readdir });
+  assert.deepEqual(result.entries, ["real-1", "real-2"]);
+  assert.deepEqual(result.diagnostics, []);
+});
+
 test("an a->b->a symlink cycle terminates in bounded time and is never followed", () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-walk-cycle-"),

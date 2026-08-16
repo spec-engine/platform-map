@@ -1,13 +1,9 @@
-// GRAPH-02/03/04 (view side): the pure graph(pm) view over a PlatformMap. Operates
-// ONLY on pm.edges + pm.units — no I/O (no fs, no child_process, no fetch). It is the
-// seam Dark Factory's planWaves() binds to: toDepGraph() returns the exact
-// Map<dependent, Set<dependency>> DF consumes unmodified.
-//
-// Determinism: every array result is lexically sorted with the local plain-`<`/`>`
-// comparator (a view-layer ordering, distinct from serialize.ts which remains the sole
-// sort site for the PlatformMap OBJECT itself). Never a locale-aware comparison (ICU
-// order is not stable across Node/ICU versions). cycles() delegates to canonicalCycles so
-// graph().cycles() and map()'s CYCLE_SUSPECTED diagnostics agree byte-for-byte (GRAPH-04).
+// The pure graph(pm) view over a PlatformMap: operates ONLY on pm.edges and
+// pm.units, no I/O. toDepGraph() is the seam Dark Factory's planWaves() binds
+// to: the exact Map<dependent, Set<dependency>> DF consumes unmodified. Every
+// array result is lexically sorted with the plain `<`/`>` comparator (a
+// view-layer ordering); cycles() delegates to canonicalCycles so it agrees
+// byte-for-byte with map()'s CYCLE_SUSPECTED diagnostics.
 
 import { canonicalCycles } from "./internal/scc.js";
 import type { PlatformGraph, PlatformMap, Unit } from "./types.js";
@@ -19,11 +15,10 @@ function compare(a: string, b: string): number {
 }
 
 /**
- * Builds the pure query view for a PlatformMap. Recursively collects every
- * kind:"workspace-package" name, builds forward (dep) and reverse (rev) adjacency
- * maps seeded for every name, and exposes the six PlatformGraph methods. All results
- * are lexically sorted; the transitive closures use a `seen` guard so cyclic graphs
- * terminate (T-03-05).
+ * Builds the pure query view for a PlatformMap: recursively collects every
+ * kind:"workspace-package" name, builds forward and reverse adjacency maps
+ * seeded for every name, and exposes the six PlatformGraph methods. The
+ * transitive closures use a `seen` guard so cyclic graphs terminate.
  */
 export function graph(pm: PlatformMap): PlatformGraph {
   const names: string[] = [];
@@ -47,8 +42,8 @@ export function graph(pm: PlatformMap): PlatformGraph {
     rev.get(e.to)?.add(e.from);
   }
 
-  // Transitive closure from `start` over adjacency `g`, excluding the start node,
-  // returned lexically sorted. The `seen` Set guarantees termination on cycles.
+  // Transitive closure from `start` over adjacency `g`, excluding the start
+  // node, returned lexically sorted; `seen` guarantees termination on cycles.
   const closure = (start: string, g: Map<string, Set<string>>): string[] => {
     const seen = new Set<string>();
     const stack: string[] = [start];
@@ -66,12 +61,10 @@ export function graph(pm: PlatformMap): PlatformGraph {
 
   return {
     toDepGraph: (): Map<string, Set<string>> => {
-      // Seed EVERY workspace-package name (empty Set for leaves) — mirrors DF
-      // buildDepGraph's graph.set(p.name, deps) for all packages. Inner Sets are
-      // built from lexically-sorted deps so iteration order is input-order
-      // independent (WR-01): deterministic even for a caller-built PlatformMap
-      // whose edges weren't run through serialize.ts. DF's planWaves consumes the
-      // Sets order-independently, but the honesty contract promises sorted views.
+      // Seed EVERY workspace-package name (empty Set for leaves). Inner Sets
+      // are built from lexically-sorted deps so iteration order stays
+      // deterministic even for a caller-built PlatformMap that never passed
+      // through serialize().
       const g = new Map<string, Set<string>>();
       for (const n of names)
         g.set(n, new Set([...(dep.get(n) ?? [])].sort(compare)));

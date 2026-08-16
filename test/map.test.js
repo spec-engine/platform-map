@@ -162,6 +162,43 @@ test("map() stamps the unit path onto an invalid-package-name diagnostic (WR-01)
   );
 });
 
+// DIAG-01: a nested unit's census diagnostics carry its QUALIFIED name as the
+// locus, so two monorepos with the same child path stay attributable and the
+// serialize (severity, code, path) tie-break stays total.
+test("map() qualifies nested census diagnostic loci with the unit name (DIAG-01)", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-diag-"));
+  try {
+    for (const mono of ["mono-a", "mono-b"]) {
+      const dir = path.join(parent, mono);
+      fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "pnpm-workspace.yaml"),
+        "packages:\n  - 'packages/*'\n",
+      );
+      const bad = path.join(dir, "packages", "bad");
+      fs.mkdirSync(bad, { recursive: true });
+      fs.writeFileSync(
+        path.join(bad, "package.json"),
+        JSON.stringify({ name: "Has Space" }),
+      );
+    }
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const pm = await map(workdir, { boundary: parent, refProbe: false });
+    const loci = pm.diagnostics
+      .filter(
+        (d) =>
+          d.code === "MALFORMED_CONFIG" && /Has Space/.test(d.message ?? ""),
+      )
+      .map((d) => d.path)
+      .sort();
+    assert.deepEqual(loci, ["mono-a/packages/bad", "mono-b/packages/bad"]);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("map() recurses into a nested monorepo (DET-02) with workspace-only children", async () => {
   const pm = await map(monorepoPnpm);
   const nested = pm.units.find((u) => u.name === "packages/nested-mono");
@@ -169,7 +206,7 @@ test("map() recurses into a nested monorepo (DET-02) with workspace-only childre
   assert.equal(nested.mode, "monorepo");
   assert.equal(nested.units.length, 1);
   const [leaf] = nested.units;
-  assert.equal(leaf.name, "packages/leaf");
+  assert.equal(leaf.name, "packages/nested-mono/packages/leaf");
   assert.equal(leaf.kind, "workspace-package");
   // Nested children come ONLY from workspace expansion — never phantom
   // sibling/DF/SE sub-units at any nested level.
@@ -216,11 +253,108 @@ test("map() expands a multi-repo constituent that is itself a monorepo to mode:m
     );
     assert.equal(sib.units.length, 1, "its workspace child is expanded");
     const [child] = sib.units;
-    assert.equal(child.name, "packages/inner-pkg");
+    assert.equal(child.name, "mono-sib/packages/inner-pkg");
     assert.equal(child.kind, "workspace-package");
     // Workspace-expansion-only: the child comes solely from the workspace
     // adapter — never a phantom sibling/DF/SE sub-unit.
     assert.deepEqual(child.sources, ["workspace"]);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+// IDENT-04: a caller-injected unit colliding with a would-be nested expansion
+// name. The observable contract: one survivor (the first-precedence caller
+// unit), CONFIG_CONFLICT surfaced, nothing doubled.
+test("map() surfaces CONFIG_CONFLICT and keeps the first-precedence unit on a forced name collision (IDENT-04)", async () => {
+  const parent = fs.mkdtempSync(
+    path.join(os.tmpdir(), "platform-map-collide-"),
+  );
+  try {
+    const mono = path.join(parent, "mono");
+    fs.mkdirSync(path.join(mono, ".git"), { recursive: true });
+    fs.writeFileSync(
+      path.join(mono, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    const px = path.join(mono, "packages", "x");
+    const py = path.join(mono, "packages", "y");
+    fs.mkdirSync(px, { recursive: true });
+    fs.mkdirSync(py, { recursive: true });
+    fs.writeFileSync(
+      path.join(px, "package.json"),
+      JSON.stringify({ name: "@mono/x" }),
+    );
+    fs.writeFileSync(
+      path.join(py, "package.json"),
+      JSON.stringify({
+        name: "@mono/y",
+        dependencies: { "@mono/x": "workspace:*" },
+      }),
+    );
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(path.join(workdir, "stub"), { recursive: true });
+
+    const pm = await map(workdir, {
+      boundary: parent,
+      refProbe: false,
+      units: [{ name: "mono/packages/x", path: "stub" }],
+    });
+
+    const all = [];
+    (function collect(units) {
+      for (const u of units) {
+        all.push(u);
+        if (u.units.length > 0) collect(u.units);
+      }
+    })(pm.units);
+
+    const claimants = all.filter((u) => u.name === "mono/packages/x");
+    assert.equal(claimants.length, 1, "exactly one unit keeps the name");
+    assert.ok(
+      claimants[0].sources.includes("caller"),
+      "the first-precedence caller unit survives",
+    );
+
+    assert.ok(
+      pm.diagnostics.some(
+        (d) =>
+          d.code === "CONFIG_CONFLICT" &&
+          /mono\/packages\/x/.test(d.message ?? ""),
+      ),
+      "expected a CONFIG_CONFLICT naming the collision",
+    );
+
+    const names = all.map((u) => u.name);
+    assert.equal(new Set(names).size, names.length);
+    const edgeKeys = pm.edges.map((e) => `${e.from}->${e.to}`);
+    assert.equal(new Set(edgeKeys).size, edgeKeys.length);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("MapOptions.refProbe:false skips the ref probe; probed-not-declared refs stay null", {
+  skip: GIT ? false : "git binary unavailable",
+}, async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-refopt-"));
+  try {
+    const sib = path.join(parent, "sib-repo");
+    fs.mkdirSync(sib);
+    spawnSync("git", ["init", "-q"], { cwd: sib, stdio: "ignore" });
+    spawnSync(
+      "git",
+      ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+      { cwd: sib, stdio: "ignore" },
+    );
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const probed = await map(workdir);
+    const skipped = await map(workdir, { refProbe: false });
+    const refOf = (pm) => pm.units.find((u) => u.name === "sib-repo").ref;
+    assert.equal(refOf(probed), "main");
+    assert.equal(refOf(skipped), null);
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });
   }
@@ -600,7 +734,11 @@ function writeDfConfig(dir, config) {
 }
 
 test("map() infers platform.repos[] units from a dark-factory platform with no platform-map.json", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-df-"));
+  // Wrapper dir isolates the sibling scan from concurrent tests' tmpdir
+  // fixtures (the scan reads the root's parent).
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-df-"));
+  const root = path.join(parent, "root");
+  fs.mkdirSync(root);
   try {
     fs.mkdirSync(path.join(root, "svc-api"), { recursive: true });
     fs.mkdirSync(path.join(root, "ui"), { recursive: true });
@@ -625,7 +763,7 @@ test("map() infers platform.repos[] units from a dark-factory platform with no p
     // dependsOn[] never becomes an edge (Phase 3).
     assert.deepEqual(pm.edges, []);
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 
