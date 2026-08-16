@@ -336,6 +336,7 @@ function enrichUnit(
   for (const d of childMerged.diagnostics) diagnostics.push(d);
 
   for (const child of childMerged.units) {
+    child.name = `${unit.name}/${child.name}`;
     enrichUnit(absDir, child, depth + 1, diagnostics, depSideTable);
   }
   unit.units = childMerged.units;
@@ -832,7 +833,9 @@ export async function map(
     // (PMAP-010); else basename(root), which never leaks an absolute path —
     // fall back to a fixed placeholder (never raw root) when basename is
     // empty (errors.ts discipline).
-    name: canonicalSide?.name ?? (path.basename(effectiveRoot) || "(root)"),
+    name:
+      canonicalSide?.name ??
+      (path.basename(path.resolve(effectiveRoot)) || "(root)"),
     // The (possibly re-anchored) root: the documented caller-anchor exception
     // — equals the caller's own string whenever no re-anchor happened (IP-7).
     root: effectiveRoot,

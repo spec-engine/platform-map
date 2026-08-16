@@ -97,7 +97,7 @@ function malformedDiagnostic(reason: string): Diagnostic {
  *  basename-or-"(root)" discipline so no absolute path ever leaks. */
 function rootUnit(root: string, signals: Partial<UnitSignals>): PartialUnit {
   return {
-    name: path.basename(root) || "(root)",
+    name: path.basename(path.resolve(root)) || "(root)",
     path: ".",
     kind: "repo",
     signals,

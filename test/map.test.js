@@ -169,7 +169,7 @@ test("map() recurses into a nested monorepo (DET-02) with workspace-only childre
   assert.equal(nested.mode, "monorepo");
   assert.equal(nested.units.length, 1);
   const [leaf] = nested.units;
-  assert.equal(leaf.name, "packages/leaf");
+  assert.equal(leaf.name, "packages/nested-mono/packages/leaf");
   assert.equal(leaf.kind, "workspace-package");
   // Nested children come ONLY from workspace expansion — never phantom
   // sibling/DF/SE sub-units at any nested level.
@@ -216,7 +216,7 @@ test("map() expands a multi-repo constituent that is itself a monorepo to mode:m
     );
     assert.equal(sib.units.length, 1, "its workspace child is expanded");
     const [child] = sib.units;
-    assert.equal(child.name, "packages/inner-pkg");
+    assert.equal(child.name, "mono-sib/packages/inner-pkg");
     assert.equal(child.kind, "workspace-package");
     // Workspace-expansion-only: the child comes solely from the workspace
     // adapter — never a phantom sibling/DF/SE sub-unit.

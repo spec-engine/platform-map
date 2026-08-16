@@ -104,13 +104,13 @@ test("rung 3 at root: definition yields member units for mixed shapes (PMAP-011,
     assert.equal(mono.mode, "monorepo");
     assert.deepEqual(
       mono.units.map((u) => u.name),
-      ["packages/app", "packages/core"],
+      ["mono-lib/packages/app", "mono-lib/packages/core"],
     );
     // the monorepo member's internal edge is present
     assert.deepEqual(pm.edges, [
       {
-        from: "packages/app",
-        to: "packages/core",
+        from: "mono-lib/packages/app",
+        to: "mono-lib/packages/core",
         via: "workspace-dependency",
       },
     ]);

@@ -136,7 +136,7 @@ export function specEngineAdapter(
   const config = parsed as Record<string, unknown>;
 
   const memberSignals: Partial<UnitSignals> = { hasSpecEngineConfig: true };
-  const parentName = path.basename(root) || "(root)";
+  const parentName = path.basename(path.resolve(root)) || "(root)";
 
   // The root dir carries spec-engine.member.json -> it is itself a member unit.
   const partialUnits: PartialUnit[] = [

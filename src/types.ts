@@ -46,8 +46,10 @@ export interface Unit {
   /** Platform-relative path used as identity (e.g. "packages/engine",
    *  "svc-api/apps/web"). Unique within a PlatformMap (MODEL-05). */
   name: string;
-  /** Relative path from platform root. May equal name; may differ when a
-   *  canonical config aliases a unit ("svc-api" → "../acme-service-api"). */
+  /** Relative path from the containing unit's root (the platform root for
+   *  top-level units, the parent monorepo's root for nested units). May equal
+   *  name; may differ when a canonical config aliases a unit
+   *  ("svc-api" → "../acme-service-api"). */
   path: string;
   kind: "repo" | "workspace-package";
   /** This unit's own shape. "monorepo" ⇒ units[] is populated. */

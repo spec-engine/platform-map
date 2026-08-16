@@ -55,6 +55,10 @@ function compareCodeUnit(a: string, b: string): number {
   return 0;
 }
 
+function prunedDir(name: string): boolean {
+  return name === "node_modules" || name.startsWith(".");
+}
+
 function truncated(locus: string, reason: string): Diagnostic {
   return {
     code: "CENSUS_TRUNCATED",
@@ -92,7 +96,8 @@ export function walk(root: string, opts: WalkOptions): WalkResult {
     for (const dirent of dirents) {
       if (capped) return;
 
-      if (dirent.isSymbolicLink()) continue; // never followed, never included (Pitfall 5/6)
+      if (dirent.isSymbolicLink()) continue; // never followed, never included
+      if (dirent.isDirectory() && prunedDir(dirent.name)) continue;
 
       if (entryCount >= maxEntries) {
         diagnostics.push(truncated(relDir, "maxEntries exceeded"));

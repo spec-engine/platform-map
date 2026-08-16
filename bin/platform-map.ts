@@ -232,6 +232,7 @@ async function main(): Promise<number> {
     return 0;
   }
   try {
+    a.dir = path.resolve(a.dir);
     switch (a.command) {
       case "detect": {
         // detect() is SYNC and carries no diagnostics (0-or-throw): pretty JSON

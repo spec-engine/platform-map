@@ -85,7 +85,7 @@ test("map() maps a mixed platform (plain single-repo sibling + monorepo sibling)
     assert.equal(mono.mode, "monorepo");
     assert.deepEqual(
       mono.units.map((u) => u.name),
-      ["packages/app", "packages/core"],
+      ["mono-lib/packages/app", "mono-lib/packages/core"],
     );
     for (const child of mono.units) {
       assert.equal(child.kind, "workspace-package");
@@ -106,8 +106,8 @@ test("map() maps a mixed platform (plain single-repo sibling + monorepo sibling)
     // apps (deriveRole rule 1).
     const roleByName = {};
     for (const child of mono.units) roleByName[child.name] = child.role;
-    assert.equal(roleByName["packages/core"], "library");
-    assert.equal(roleByName["packages/app"], "app");
+    assert.equal(roleByName["mono-lib/packages/core"], "library");
+    assert.equal(roleByName["mono-lib/packages/app"], "app");
     assert.equal(plain.role, "app");
 
     // Edges: EXACTLY the one workspace edge inside mono-lib. This
@@ -117,8 +117,8 @@ test("map() maps a mixed platform (plain single-repo sibling + monorepo sibling)
     // consciously break this assertion when cross-repo edges land.
     assert.deepEqual(pm.edges, [
       {
-        from: "packages/app",
-        to: "packages/core",
+        from: "mono-lib/packages/app",
+        to: "mono-lib/packages/core",
         via: "workspace-dependency",
       },
     ]);
