@@ -19,63 +19,27 @@
 // throws: a failed scan or unreadable df-config.json degrades to omitted signals,
 // never an exception (T-02-13).
 
-import * as fs from "node:fs";
 import * as path from "node:path";
+import { classifyDfConfig } from "../internal/df-pointer.js";
 import { scanSiblings } from "../internal/scan.js";
 import type { Diagnostic, UnitSignals } from "../types.js";
 import type { AdapterContext, AdapterResult, PartialUnit } from "./index.js";
 
 /**
- * The DF pointer-only predicate (02-RESEARCH.md L418-426): a df-config.json is a
- * bare STATE_DIR pointer iff it is a plain object with exactly one top-level key
- * `platform`, itself a plain object with exactly one key `factoryDir` holding a
- * string. Anything else present-but-shaped-differently is a full/non-pointer
- * config. Uses explicit key-count + typeof checks (never spreads the untrusted
- * parsed object — prototype-pollution safe by construction).
- */
-function isPointerOnly(parsed: unknown): boolean {
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return false;
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (Object.keys(obj).length !== 1) return false;
-  const platform = obj.platform;
-  if (
-    platform === null ||
-    typeof platform !== "object" ||
-    Array.isArray(platform)
-  ) {
-    return false;
-  }
-  const p = platform as Record<string, unknown>;
-  return Object.keys(p).length === 1 && typeof p.factoryDir === "string";
-}
-
-/**
- * Reads `<siblingAbs>/.factory/df-config.json` and classifies it (T-02-13):
- *  - absent           -> {} (omit both signals; MODEL-02 absence-omission)
- *  - pointer-only     -> { hasDfPointer: true }
- *  - present, non-ptr -> { dfConfigConflict: true }
- *  - present, unparse -> { dfConfigConflict: true }
- * Never throws — an unreadable file is treated as absent.
+ * Classifies `<siblingAbs>/.factory/df-config.json` into signals:
+ *  - absent        -> {} (absence is omitted, never asserted false)
+ *  - pointer-only  -> { hasDfPointer: true }
+ *  - anything else -> { dfConfigConflict: true }
  */
 function detectDfPointer(siblingAbs: string): Partial<UnitSignals> {
-  const p = path.join(siblingAbs, ".factory", "df-config.json");
-  let text: string;
-  try {
-    text = fs.readFileSync(p, "utf8");
-  } catch {
-    return {};
+  switch (classifyDfConfig(siblingAbs)) {
+    case "absent":
+      return {};
+    case "pointer":
+      return { hasDfPointer: true };
+    default:
+      return { dfConfigConflict: true };
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { dfConfigConflict: true };
-  }
-  return isPointerOnly(parsed)
-    ? { hasDfPointer: true }
-    : { dfConfigConflict: true };
 }
 
 /**

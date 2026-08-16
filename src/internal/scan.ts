@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Detection, Diagnostic } from "../types.js";
+import { classifyDfConfig } from "./df-pointer.js";
 import { matchGlob } from "./glob.js";
 import { resolveWithinRoot } from "./path-guard.js";
 
@@ -131,17 +132,21 @@ export function scanSiblings(
 
     if (!isCandidate(absoluteEntryPath)) continue;
 
+    const dfConfig = classifyDfConfig(absoluteEntryPath);
     siblings.push({
       name,
       path: path
         .relative(resolvedPlatformRoot, absoluteEntryPath)
         .split(path.sep)
         .join("/"),
-      ref: null, // DET-05: no git subprocess here — map()'s per-unit loop runs the MODEL-06 ref probe
-      // Pitfall 6: the DF pointer lives at the STATE_DIR convention
-      // <sibling>/.factory/df-config.json, NOT a bare <sibling>/df-config.json.
-      hasDfPointer: existsAt(absoluteEntryPath, ".factory/df-config.json"),
-      conflict: null,
+      ref: null, // no git subprocess here — map()'s per-unit loop runs the ref probe
+      hasDfPointer: dfConfig === "pointer",
+      conflict:
+        dfConfig === "full"
+          ? "df-config.json is a full config, not a pointer"
+          : dfConfig === "malformed"
+            ? "df-config.json failed to parse"
+            : null,
     });
   }
 

@@ -30,38 +30,13 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isPointerOnly } from "../internal/df-pointer.js";
 import { resolveWithinRoot } from "../internal/path-guard.js";
 import type { Diagnostic, UnitSignals } from "../types.js";
 import type { AdapterContext, AdapterResult, PartialUnit } from "./index.js";
 
 const STATE_DIR = ".factory";
 const DF_CONFIG = "df-config.json";
-
-/**
- * The DF pointer-only predicate (02-RESEARCH.md L418-426, verbatim from DF
- * `platform-discovery.cjs`): a df-config.json is a bare STATE_DIR pointer iff it
- * is a plain object with exactly one top-level key `platform`, itself a plain
- * object with exactly one key `factoryDir` holding a string. Uses explicit
- * key-count + typeof checks (never spreads the untrusted parsed object —
- * prototype-pollution safe by construction).
- */
-function isPointerOnly(parsed: unknown): boolean {
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return false;
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (Object.keys(obj).length !== 1) return false;
-  const platform = obj.platform;
-  if (
-    platform === null ||
-    typeof platform !== "object" ||
-    Array.isArray(platform)
-  ) {
-    return false;
-  }
-  const p = platform as Record<string, unknown>;
-  return Object.keys(p).length === 1 && typeof p.factoryDir === "string";
-}
 
 /** Extracts `platform.repos` as an array when the config is a full config
  *  (a plain object whose `platform` is a plain object holding a `repos` array);
