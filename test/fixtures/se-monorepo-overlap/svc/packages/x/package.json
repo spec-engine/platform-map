@@ -1,0 +1,6 @@
+{
+  "name": "@svc/x",
+  "exports": {
+    ".": "./index.js"
+  }
+}
