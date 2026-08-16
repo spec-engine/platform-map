@@ -33,6 +33,12 @@ import { probeRef } from "./internal/ref-probe.js";
 import { looksLikeRepoRoot, scanSiblings } from "./internal/scan.js";
 import { canonicalCycles } from "./internal/scc.js";
 import { serialize } from "./internal/serialize.js";
+import {
+  claim,
+  joinLocation,
+  nameCollisionDiagnostic,
+  type UnitNameRegistry,
+} from "./internal/unique-names.js";
 import { merge } from "./merge.js";
 import { applyRoles } from "./role.js";
 import { censusSignals } from "./signals.js";
@@ -216,13 +222,20 @@ function applyCensusSignals(unit: Unit, census: UnitSignals): void {
 /** Enriches a resolved unit in place: signal census, then, for any unit that
  *  is itself a monorepo (workspace-package or promoted kind:"repo"), expands
  *  children via the workspace adapter ONLY (the root-level adapters would
- *  fabricate phantom sub-units) and sets mode:"monorepo". Depth-bounded. */
+ *  fabricate phantom sub-units) and sets mode:"monorepo". Depth-bounded.
+ *  A qualified child whose name is already registered is never attached:
+ *  a same-location twin (e.g. an SE sub-member re-found by the workspace
+ *  expansion) is dropped silently, a different-location collision is dropped
+ *  with CONFIG_CONFLICT. `platformPath` is this unit's platform-relative
+ *  location, the base the children's registry locations are joined under. */
 function enrichUnit(
   root: string,
   unit: Unit,
   depth: number,
   diagnostics: Diagnostic[],
   depSideTable: Map<string, string[]>,
+  registry: UnitNameRegistry,
+  platformPath: string,
   absDirOverride?: string,
 ): void {
   // A local override changes WHERE the member is read from, never unit.path
@@ -263,11 +276,37 @@ function enrichUnit(
   );
   for (const d of childMerged.diagnostics) diagnostics.push(d);
 
+  const kept: Unit[] = [];
   for (const child of childMerged.units) {
     child.name = `${unit.name}/${child.name}`;
-    enrichUnit(absDir, child, depth + 1, diagnostics, depSideTable);
+    const childLocation = joinLocation(platformPath, child.path);
+    const outcome = claim(registry, child.name, childLocation);
+    // A same-location twin is dropped WITHOUT recursing: the first-precedence
+    // unit already owns the identity and its census, and recursing would
+    // overwrite its depSideTable entry.
+    if (outcome === "duplicate-same-location") continue;
+    if (outcome === "duplicate-different-location") {
+      diagnostics.push(
+        nameCollisionDiagnostic(
+          child.name,
+          registry.get(child.name) as string,
+          childLocation,
+        ),
+      );
+      continue;
+    }
+    enrichUnit(
+      absDir,
+      child,
+      depth + 1,
+      diagnostics,
+      depSideTable,
+      registry,
+      childLocation,
+    );
+    kept.push(child);
   }
-  unit.units = childMerged.units;
+  unit.units = kept;
 }
 
 /** Maps a directory tree into a deterministic PlatformMap: detect() (the
@@ -498,14 +537,35 @@ export async function map(
 
   // Same SEC-01 discipline as the adapter fold, guarded per-unit so one
   // failure never aborts the rest; depSideTable feeds buildEdges.
+  // The name registry is seeded with every already-assembled unit so nested
+  // expansion can never re-mint an identity a flat unit already owns; merge()
+  // guarantees top-level names are unique, so seeding cannot collide.
   const depSideTable = new Map<string, string[]>();
+  const nameRegistry: UnitNameRegistry = new Map();
+  const seedRegistry = (units: Unit[], parentLocation: string): void => {
+    for (const u of units) {
+      const location = joinLocation(parentLocation, u.path);
+      claim(nameRegistry, u.name, location);
+      if (u.units.length > 0) seedRegistry(u.units, location);
+    }
+  };
+  seedRegistry(merged.units, ".");
   for (const unit of merged.units) {
     const dir = unitDiskDir(unit);
     // A forcibly-missing member is never read; unit still emitted, empty
     // signals.
     if (dir === null) continue;
     try {
-      enrichUnit(effectiveRoot, unit, 0, extraDiagnostics, depSideTable, dir);
+      enrichUnit(
+        effectiveRoot,
+        unit,
+        0,
+        extraDiagnostics,
+        depSideTable,
+        nameRegistry,
+        unit.path,
+        dir,
+      );
     } catch (error) {
       if (
         error instanceof RootNotFoundError ||
