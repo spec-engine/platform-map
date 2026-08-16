@@ -84,6 +84,26 @@ test("censusSignals stamps the provided locus onto an invalid-name diagnostic (W
   assert.equal(malformed.path, "packages/bad-name");
 });
 
+// DIAG-01: walk-census diagnostics (CENSUS_TRUNCATED) are re-anchored under
+// the locus so nested units report platform-qualified paths.
+test("censusSignals prefixes a CENSUS_TRUNCATED path with the locus (DIAG-01)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-signals-"));
+  try {
+    let deep = dir;
+    for (let i = 1; i <= 17; i++) deep = path.join(deep, `d${i}`);
+    fs.mkdirSync(deep, { recursive: true });
+    const { diagnostics } = censusSignals(dir, "mono/packages/app");
+    const truncated = diagnostics.find((d) => d.code === "CENSUS_TRUNCATED");
+    assert.ok(truncated, "expected a CENSUS_TRUNCATED diagnostic");
+    assert.ok(
+      truncated.path.startsWith("mono/packages/app/"),
+      `expected a locus-prefixed path, got ${truncated.path}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("censusSignals leaves the invalid-name diagnostic path unset when no locus is given", () => {
   const { diagnostics } = censusSignals(path.join(signalsDir, "bad-name"));
   const malformed = diagnostics.find((d) => d.code === "MALFORMED_CONFIG");

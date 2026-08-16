@@ -162,6 +162,43 @@ test("map() stamps the unit path onto an invalid-package-name diagnostic (WR-01)
   );
 });
 
+// DIAG-01: a nested unit's census diagnostics carry its QUALIFIED name as the
+// locus, so two monorepos with the same child path stay attributable and the
+// serialize (severity, code, path) tie-break stays total.
+test("map() qualifies nested census diagnostic loci with the unit name (DIAG-01)", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-diag-"));
+  try {
+    for (const mono of ["mono-a", "mono-b"]) {
+      const dir = path.join(parent, mono);
+      fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "pnpm-workspace.yaml"),
+        "packages:\n  - 'packages/*'\n",
+      );
+      const bad = path.join(dir, "packages", "bad");
+      fs.mkdirSync(bad, { recursive: true });
+      fs.writeFileSync(
+        path.join(bad, "package.json"),
+        JSON.stringify({ name: "Has Space" }),
+      );
+    }
+    const workdir = path.join(parent, "workdir");
+    fs.mkdirSync(workdir);
+
+    const pm = await map(workdir, { boundary: parent, refProbe: false });
+    const loci = pm.diagnostics
+      .filter(
+        (d) =>
+          d.code === "MALFORMED_CONFIG" && /Has Space/.test(d.message ?? ""),
+      )
+      .map((d) => d.path)
+      .sort();
+    assert.deepEqual(loci, ["mono-a/packages/bad", "mono-b/packages/bad"]);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("map() recurses into a nested monorepo (DET-02) with workspace-only children", async () => {
   const pm = await map(monorepoPnpm);
   const nested = pm.units.find((u) => u.name === "packages/nested-mono");
