@@ -135,13 +135,16 @@ test("losing the slot does not mute the unit's other deps: the loser's edge to a
     pkg("packages/lib-b", "@x/lib"),
     pkg("packages/lib-c", "@x/c"),
   ];
-  const depsOf = (u) =>
-    u.name === "packages/lib-b" ? ["@x/lib", "@x/c"] : [];
+  const depsOf = (u) => (u.name === "packages/lib-b" ? ["@x/lib", "@x/c"] : []);
 
   const { edges } = buildEdges(units, depsOf);
 
   assert.deepEqual(edges, [
-    { from: "packages/lib-b", to: "packages/lib-c", via: "workspace-dependency" },
+    {
+      from: "packages/lib-b",
+      to: "packages/lib-c",
+      via: "workspace-dependency",
+    },
   ]);
 });
 

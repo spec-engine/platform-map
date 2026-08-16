@@ -14,7 +14,9 @@ export interface BuildEdgesResult {
 /**
  * Builds the workspace-dependency edges for a unit tree. `depsOf` supplies a
  * unit's raw dep-name candidates (all four manifest dep fields). External deps
- * and self-edges are dropped; a duplicate packageName within one sibling set
+ * and self-edges are dropped, including a dep on the unit's own declared
+ * package name even when the unit lost the index slot; a duplicate
+ * packageName within one sibling set
  * emits CONFIG_CONFLICT and the first claimant keeps the index slot. Returns
  * natural order.
  */
@@ -58,6 +60,7 @@ function visitSet(
   for (const u of siblings) {
     if (u.kind === "workspace-package") {
       for (const depName of depsOf(u)) {
+        if (depName === u.signals.packageName) continue;
         const to = idx.get(depName);
         if (to === undefined || to === u.name) continue;
         out.push({ from: u.name, to, via: "workspace-dependency" });
