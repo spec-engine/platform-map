@@ -30,13 +30,14 @@ test("the 30-second path: preview, init --yes, map, check", () => {
   const user = path.join(dir, "user.json");
   try {
     const root = acmePlatform(dir, false);
+    write(path.join(root, "scratch", "package.json"), { name: "scratch" });
 
     const preview = run(root, [], user);
     assert.equal(preview.code, 0);
     assert.match(preview.out, /^acme \(multi-repo, undeclared\)/);
     assert.match(preview.err, /UNDECLARED_PLATFORM/);
 
-    const init = run(root, ["init", "--yes"], user);
+    const init = run(root, ["init", "--yes", "--ignore", "scratch"], user);
     assert.equal(init.code, 0);
     assert.equal(
       init.out.split("\n").filter((l) => l.startsWith("wrote ")).length,
@@ -45,6 +46,7 @@ test("the 30-second path: preview, init --yes, map, check", () => {
     assert.deepEqual(readJson(path.join(root, "platform-map.json")), {
       name: "acme",
       members: ["api", "shared", "webapp"],
+      ignore: ["scratch"],
     });
 
     const fromMember = run(
@@ -59,6 +61,10 @@ test("the 30-second path: preview, init --yes, map, check", () => {
     const check = run(root, ["check"], user);
     assert.equal(check.code, 0);
     assert.match(check.err, /ok/);
+
+    // the ignore sticks: no UNLISTED_REPO for scratch, and a re-run has nothing to add
+    assert.equal(run(root, [], user).err, "");
+    assert.match(run(root, ["init", "--yes"], user).err, /Nothing new/);
   } finally {
     rm(dir);
   }

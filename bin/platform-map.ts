@@ -37,7 +37,7 @@ flags:
   --dry-run          init: print the plan, write nothing
   --root <dir>       link: where the platform directory is
   --config <file>    per-user file (default: $PLATFORM_MAP_CONFIG or ~/.config/platform-map/platforms.json)
-  --ignore <name>    skip a directory during discovery (repeatable)
+  --ignore <name>    skip a directory during discovery (repeatable; init remembers it in the platform file)
   --help, -h         show this help
   --version, -V      print the version
 `;
@@ -147,14 +147,9 @@ async function runInit(a: Args): Promise<number> {
 
   const include: string[] = [];
   for (const c of eligible) {
-    const kind = c.hasGit ? "git" : "package.json";
-    if (
-      await ask(
-        `Include ${c.name} (${kind}) in ${plan.platformName}? [Y/n] `,
-        a.yes,
-      )
-    )
-      include.push(c.name);
+    const kind = c.hasGit ? "git repo" : "package.json, no .git";
+    const prompt = `Include ${c.name} (${kind}) in ${plan.platformName}? [Y/n] `;
+    if (await ask(prompt, a.yes)) include.push(c.name);
     else if (!a.yes && !process.stdin.isTTY) return 1;
   }
   const result = applyInit(plan, include, a.options);

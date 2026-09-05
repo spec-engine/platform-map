@@ -70,8 +70,15 @@ export function planInit(dir: string, options: Options = {}): InitPlan {
     ]),
   ].sort(compare);
   const file: PlatformFile = { name: platformName, members: proposed };
-  if (read.kind === "platform" && read.file.ignore !== undefined)
-    file.ignore = read.file.ignore;
+  // --ignore is remembered in the platform file so discovery and the
+  // UNLISTED_REPO check skip those directories from now on.
+  const ignore = [
+    ...new Set([
+      ...(read.kind === "platform" ? (read.file.ignore ?? []) : []),
+      ...(options.ignore ?? []),
+    ]),
+  ].sort(compare);
+  if (ignore.length > 0) file.ignore = ignore;
   plan.writes[PLATFORM_FILE] = file;
 
   for (const c of eligible) {
@@ -112,8 +119,12 @@ export function applyInit(
   const existing = plan.writes[PLATFORM_FILE] as PlatformFile | undefined;
   const file: PlatformFile = { name: plan.platformName, members };
   if (existing?.ignore !== undefined) file.ignore = existing.ignore;
+  const current = readPlatformFile(plan.root);
   const unchanged =
-    plan.members.length === members.length && exists(platformPath);
+    current.kind === "platform" &&
+    current.file.members.length === members.length &&
+    JSON.stringify(current.file.ignore ?? []) ===
+      JSON.stringify(file.ignore ?? []);
   if (unchanged) skipped.push(platformPath);
   else {
     writeJson(platformPath, file);

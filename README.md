@@ -43,12 +43,18 @@ tells CI when the files and the disk disagree.
 
 Prefer to confirm each repo? Drop `--yes` and it asks, one per line.
 
+A directory counts as a repository if it has a `.git` entry or a
+`package.json`. To keep one out (a scratch folder, say), pass
+`--ignore scratch` to `init`; it is remembered in the platform file's
+`ignore` list, so discovery and the unlisted-repo check skip it from then on.
+You can also edit that list by hand.
+
 ## The two files
 
 **Platform file**, committed in the platform repo:
 
 ```json
-{ "name": "acme", "members": ["api", "mobile", "shared", "webapp"] }
+{ "name": "acme", "members": ["api", "mobile", "shared", "webapp"], "ignore": ["scratch"] }
 ```
 
 **Leaf marker**, committed in each member repo:
@@ -232,7 +238,7 @@ platform-map check [dir]        exit 1 if the files and the disk disagree
 --dry-run          init: print the plan, write nothing
 --root <dir>       link: where the platform directory is
 --config <file>    per-user file (default: $PLATFORM_MAP_CONFIG or ~/.config/platform-map/platforms.json)
---ignore <name>    skip a directory during discovery (repeatable)
+--ignore <name>    skip a directory during discovery (repeatable; init remembers it in the platform file)
 ```
 
 `dir` defaults to the current directory. The tree goes to stdout and

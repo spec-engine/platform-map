@@ -143,8 +143,9 @@ Proceed? [y/N]
 ```
 
 A directory counts as a repository if it has a `.git` entry or a
-`package.json`. Running `init` again in an existing platform only asks about
-repositories that are not yet listed. It never overwrites a marker that
+`package.json`. `init --ignore <name>` keeps a directory out and is
+remembered in the platform file's `ignore` list. Running `init` again in an existing platform only
+asks about repositories that are not yet listed. It never overwrites a marker that
 already exists. `init --dry-run` prints the plan and writes nothing.
 
 Membership is only ever what `init` confirmed. A repository sitting in the
