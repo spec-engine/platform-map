@@ -24,7 +24,7 @@ const ROOTS = [
   "test-bun",
   ".github",
 ];
-const EXCLUDE_DIRS = new Set(["node_modules", "dist", ".factory", "internal"]);
+const EXCLUDE_DIRS = new Set(["node_modules", "dist", ".factory"]);
 const EXCLUDE_FILES = new Set(["scripts/check-public-docs.mjs"]);
 const TEXT_EXT = new Set([".md", ".ts", ".js", ".mjs", ".cjs", ".json", ".yml", ".yaml", ".html"]);
 
