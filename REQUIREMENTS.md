@@ -12,7 +12,7 @@ until it lands). Domain key: `PMAP` per `standards/spec-keys.md`.
 Same input tree produces byte-identical JSON output across runs and runtimes.
 No timestamps and no absolute paths in output.
 **Status: verified.**
-Evidence: `test/serialize.test.js` (shuffle byte-identity DETR-02; no
+Evidence: `test/serialize.test.js` (shuffle byte-identity; no
 absolute paths; no ISO-8601 timestamps), `test/map.test.js` (double-run
 byte-identity: single-repo, monorepo-pnpm), `test/verification.test.js`
 (double-run sweep over EVERY committed fixture, readdir-driven — new fixtures
@@ -50,7 +50,7 @@ CONFIG_CONFLICT: `merge/map/serialize`; MALFORMED_CONFIG:
 UNMATCHED_PATTERN: `glob/workspace/map/adversarial-e2e`; CYCLE_SUSPECTED:
 `map-graph/scc`; UNIT_PATH_ESCAPE: `path-guard/map/dark-factory/spec-engine/
 canonical/workspace/detect/adversarial-e2e/serialize`; CENSUS_TRUNCATED:
-`walk/workspace/serialize`; PLATFORM_DRIFT (additive, RED-97 — all six
+`walk/workspace/serialize`; PLATFORM_DRIFT (all six
 sub-cases with stable message prefixes): `platform-convention`,
 `platform-root`.
 
@@ -60,10 +60,10 @@ Symlinks never followed. I/O and subprocesses bounded. Package names
 validated.
 **Status: verified.**
 Evidence: traversal — `test/path-guard.test.js`; symlinks —
-`test/walk.test.js`, `test/adversarial-e2e.test.js` (T-05-05); bounded exec —
+`test/walk.test.js`, `test/adversarial-e2e.test.js` ; bounded exec —
 `test/exec.test.js` (SIGTERM/SIGKILL escalation, 64KB cap),
 `test/ref-probe.test.js`; package names — `test/package-name.test.js`
-(SEC-03 matrix); **no-write** — `test/verification.test.js` (full
+(the safety matrix); **no-write** — `test/verification.test.js` (full
 before/after filesystem snapshot around `map()`; plus `init` refusal in
 `test/cli.test.js`); **no-network** — `test/verification.test.js` (static
 audit: built artifacts contain no network-module references; the only
@@ -166,27 +166,25 @@ spawned process (`os.homedir()` honors it on POSIX), so the default-boundary
 path itself is exercised only via that env seam.
 
 ### PMAP-013 — Cross-repo edges
-**Status: unimplemented — RED-98.** Dependency edges across repo boundaries
+**Status: unimplemented (planned).** Dependency edges across repo boundaries
 with name-collision honesty. Today edges are deliberately scoped per sibling
 set; `test/mixed-topology.test.js` pins the current suppression behavior so
-RED-98 must consciously change it.
+the cross-repo-edges work must consciously change it.
 
-### PMAP-014 — SE-platform discovery (RED-108)
+### PMAP-014 — Spec Engine platform discovery
 `map(platformDir)` on a directory carrying a canonical `spec-engine/` dir —
 with no `platform-map.json` of any shape — classifies the platform's children
-with Spec Engine's three-bucket contract: (1) a child carrying
+with the spec-engine platform convention (see README, Integrations): (1) a child carrying
 `spec-engine.member.json` is a confirmed member unit, its `members` glob
 expanded per-child (`<child>/<rel>` naming); (2) an unconfigured child that
-looks like a repo root (`.git` dir-or-file OR `package.json` — RUNG1-02
-parity) yields `UNCONFIGURED_SIBLING`; (3) a plain folder is silent. Config
-presence confirms membership even with neither repo-root marker (the SE
-fixture shape) and even when malformed (diagnostic, never sibling advice).
-The member config's `ignore` never filters expansion (scan-only — the
-normative AC4 semantic SE conforms to); caller `opts.ignore` filters child
+looks like a repo root (`.git` dir-or-file OR `package.json`) yields `UNCONFIGURED_SIBLING`; (3) a plain folder is silent. Config
+presence confirms membership even with neither repo-root marker (the bare
+Spec Engine member shape) and even when malformed (diagnostic, never sibling advice).
+The member config's `ignore` never filters expansion (the member file's `ignore` belongs to Spec Engine's own scanner); caller `opts.ignore` filters child
 enumeration only. A `platform-map.json` always wins over the convention;
 disabling the spec-engine adapter disables the mode.
 **Status: verified.**
-Evidence: `test/se-platform.test.js` (three-bucket e2e incl. both rogue
+Evidence: `test/se-platform.test.js` (per-child classification e2e incl. both rogue
 shapes, kind rule repo-iff-.git, precedence vs definition, adapter-disable,
 malformed-child locus); `test/spec-engine.test.js` (specEnginePlatform
 re-anchoring, kind rule, ctx.ignore enumeration filter, hostile-readdir
@@ -211,7 +209,7 @@ no-write; `test/cli.test.js` (--json smoke).
 | PMAP-010 | verified* | platform-convention (equivalence matrix, firewall) | byte-exact incl. root; see catalog |
 | PMAP-011 | verified* | platform-root, platform-convention, cli-init-platform | rung-3 members carry no scan signals |
 | PMAP-012 | verified* | platform-root (walk + containment), platform-convention (drift) | boundary tested via MapOptions.boundary / HOME env |
-| PMAP-013 | unimplemented | mixed-topology pins current suppression | RED-98 |
-| PMAP-014 | verified | se-platform, spec-engine, detect (predicate), cli smoke, verification sweep | repo-root widening is SE-mode-scoped |
+| PMAP-013 | unimplemented | mixed-topology pins current suppression | planned |
+| PMAP-014 | verified | se-platform, spec-engine, detect (predicate), cli smoke, verification sweep | repo-root widening is scoped to spec-engine platform mode |
 
 `verified*` = verified with notes (see catalog entry).

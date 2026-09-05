@@ -1,9 +1,9 @@
 # Architecture
 
-platform-map owns three concerns (BRIEF §3): **detect** (what shape is this
+platform-map owns three concerns: **detect** (what shape is this
 place), **enumerate** (normalize every config surface into one unit model),
 and **graph** (dependency edges and views over them). Everything else is a
-door onto the same engine: library API, CLI, someday MCP.
+door onto the same engine: the library API and the CLI.
 
 The engine is a pipeline of pure stages around one impure edge. Source
 adapters read config surfaces; a precedence fold reconciles them (detection
@@ -16,7 +16,7 @@ config. Every other failure becomes a diagnostic in the map itself.
 ```mermaid
 flowchart TD
   CLI["CLI<br/>bin/platform-map.ts"] --> MAP
-  LIB["library caller<br/>(DF, SE, Clarity Audit)"] --> MAP
+  LIB["library caller<br/>map() / detect() / graph()"] --> MAP
 
   MAP["map()<br/>src/map.ts"] --> PR["platform resolution (pre-detect)<br/>internal/platform-root.ts<br/>definition at root > marker upward walk > none<br/>bounded by MapOptions.boundary"]
   PR --> DET["detect()  src/detect.ts<br/>manifest probe: pnpm > yarn > npm > lerna<br/>else sibling scan (internal/scan.ts)"]
@@ -48,19 +48,20 @@ flowchart TD
   GRP --> SER["serialize.ts<br/>the sole sort site"]
   SER --> PM["PlatformMap<br/>units + edges + diagnostics<br/>byte-identical JSON"]
 
-  PM --> GV["graph(pm)  src/graph.ts<br/>pure views; toDepGraph() feeds<br/>Dark Factory's planWaves unchanged"]
+  PM --> GV["graph(pm)  src/graph.ts<br/>pure views; toDepGraph() for<br/>consumers' own schedulers"]
   PM --> REN["cli-render.ts<br/>tree | --json | DOT | graph projection"]
 ```
 
 Signals are facts; `role` is a derived view any consumer can recompute via
 the exported `deriveRole()`, and canonical `overrides` beat derivation.
-Tool semantics (DF pointer resolution, SE pins, wave planning) stay in the
-tools; adapters carry only linkage signals.
+Tool-specific semantics stay in the consuming tools; adapters carry only
+linkage signals.
 
 Primitives under `src/internal/`: `walk` (bounded, symlink-safe), `glob`
 (ReDoS-safe subset), `yaml-subset` (pnpm `packages:` only), `path-guard`
 (escape checks), `exec`/`ref-probe` (the one subprocess), `df-pointer` (the
-DF pointer-only predicate, shared by the scan and two adapters), `scc`
+pointer-only predicate for `.factory/df-config.json`, shared by the scan and
+two adapters), `scc`
 (Tarjan, shared by the CYCLE_SUSPECTED diagnostic and `graph().cycles()`).
 
 ## How each platform shape is reached
@@ -70,7 +71,7 @@ flowchart TD
   S["invoked directory"] --> Q1{"platform definition?<br/>at the root, found by the<br/>upward walk, or via a member marker"}
   Q1 -->|yes| MR1["multi-repo, declared<br/>members are canonical units;<br/>unlisted .git children flag<br/>UNCONFIGURED_SIBLING"]
   Q1 -->|no| Q2{"spec-engine/ dir<br/>at the root?"}
-  Q2 -->|yes| MR2["multi-repo, SE convention<br/>children carrying spec-engine.member.json<br/>are confirmed members"]
+  Q2 -->|yes| MR2["multi-repo, spec-engine convention<br/>children carrying spec-engine.member.json<br/>are confirmed members"]
   Q2 -->|no| Q3{"workspace manifest?"}
   Q3 -->|yes| MONO["monorepo<br/>workspace-package units,<br/>workspace-dependency edges"]
   Q3 -->|no| Q4{"sibling .git repos<br/>in the parent dir?"}
