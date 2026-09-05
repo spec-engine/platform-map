@@ -14,8 +14,8 @@ flowchart TD
   MAP["map()<br/>src/map.ts"] --> START["findStart<br/>src/resolve.ts<br/>walk up to the nearest platform-map.json or .git"]
   START --> RES["resolvePlatform<br/>platform file here → root<br/>marker → parent, or the user file"]
   RES --> MEMBERS["one describeRepo per member<br/>src/packages.ts"]
-  MEMBERS --> DESC["detect + workspace globs<br/>src/detect.ts, internal/glob.ts, internal/walk.ts"]
-  DESC --> DEPS["dependsOn: each package.json's deps ∩ the platform's package names"]
+  MEMBERS --> DESC["ecosystem + workspace globs<br/>src/ecosystems.ts, src/detect.ts, internal/glob.ts, internal/walk.ts"]
+  DESC --> DEPS["dependsOn: each manifest's deps ∩ the platform's package names, same ecosystem"]
   DEPS --> DIAG["markers, missing members, unlisted repos → diagnostics"]
   DIAG --> SORT["sort repos, packages, diagnostics"]
   SORT --> OUT["PlatformMap"]
@@ -35,14 +35,15 @@ flowchart TD
 |---|---|
 | `src/types.ts` | The public types. |
 | `src/files.ts` | Read and validate the platform file, the leaf marker, and the per-user file. Write them. |
-| `src/detect.ts` | `single-repo` / `monorepo` / `multi-repo` for one directory; which workspace manifest. |
+| `src/ecosystems.ts` | The support table: per ecosystem, the package manifest and how to read it, the workspace manifests and how to read their member globs, lockfile to package manager. Also renders the README table. |
+| `src/detect.ts` | `single-repo` / `monorepo` / `multi-repo` for one directory; which workspace manifest, from which ecosystem. |
 | `src/discover.ts` | Child directories that look like repositories. |
-| `src/packages.ts` | Facts about one repo: package name, package manager, workspace packages, declared deps. |
+| `src/packages.ts` | Facts about one repo: which ecosystem describes it, package name, package manager, workspace packages, declared deps. |
 | `src/resolve.ts` | Find the platform root from wherever the command ran. |
 | `src/map.ts` | `map`, `locate`, `check`. |
 | `src/init.ts`, `src/link.ts` | The two writing commands, each split into a plan and an apply. |
 | `src/render.ts` | Tree, JSON, Mermaid. |
-| `src/internal/` | The glob matcher, the bounded directory walk, and the pnpm YAML subset. |
+| `src/internal/` | The glob matcher, the bounded directory walk, and the three manifest readers: the pnpm YAML subset, the TOML subset, and the go.mod / go.work line reader. |
 
 ## Rules that hold everywhere
 
@@ -53,3 +54,7 @@ flowchart TD
   they stop early.
 - Only `applyInit` and `applyLink` write, and only what their plan lists.
   `applyInit` never overwrites a marker.
+- Manifests are read by small built-in parsers. A shape a parser does not
+  understand is a `MALFORMED_FILE` diagnostic, never a guess. Adding an
+  ecosystem is one entry in `src/ecosystems.ts`; no other file names a
+  manifest.

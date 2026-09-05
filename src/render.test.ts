@@ -14,11 +14,11 @@ test("the tree shows repos, packages, and problems in a stable layout", () => {
       render(pm),
       [
         "acme (multi-repo)",
-        "├── api     single-repo  @acme/api",
-        "├── shared  monorepo     @acme/shared",
+        "├── api     single-repo  node  @acme/api",
+        "├── shared  monorepo     node  @acme/shared",
         "│   ├── packages/config  @acme/config",
         "│   └── packages/ui      @acme/ui",
-        "└── webapp  single-repo  @acme/webapp  (no marker)",
+        "└── webapp  single-repo  node  @acme/webapp  (no marker)",
         "",
       ].join("\n"),
     );
@@ -75,11 +75,19 @@ test("toJSON is two-space indented with a trailing newline and fixed key order",
     assert.deepEqual(repoKeys, [
       "name",
       "mode",
+      "ecosystem",
       "packageName",
       "dependsOn",
       "packages",
       "present",
       "marker",
+    ]);
+    const pkgKeys = Object.keys(JSON.parse(text).repos[1].packages[0]);
+    assert.deepEqual(pkgKeys, [
+      "path",
+      "ecosystem",
+      "packageName",
+      "dependsOn",
     ]);
   } finally {
     rm(dir);

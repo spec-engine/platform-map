@@ -2,8 +2,9 @@
 
 Document which repositories make up a platform (a mobile app, an API, a web
 app, a CLI, and the packages they share), discover the ones sitting next to
-each other, and see what is inside every repo and monorepo. Two small
-checked-in files, one convention, zero dependencies.
+each other, and see what is inside every repo and monorepo, whether it is
+Node, Python, Rust, or Go. Two small checked-in files, one convention, zero
+dependencies.
 
 ## Getting started in 30 seconds
 
@@ -20,12 +21,12 @@ See what platform-map sees, without writing anything:
 $ cd ~/clients/acme
 $ npx @spec-engine/platform-map
 acme (multi-repo, undeclared)
-├── api     single-repo  @acme/api  (no marker)
-├── mobile  single-repo  acme-mobile  (no marker)
-├── shared  monorepo     @acme/shared  (no marker)
+├── api     single-repo  node  @acme/api  (no marker)
+├── mobile  single-repo  node  acme-mobile  (no marker)
+├── shared  monorepo     node  @acme/shared  (no marker)
 │   ├── packages/config  @acme/config
 │   └── packages/ui      @acme/ui
-└── webapp  single-repo  @acme/webapp  (no marker)
+└── webapp  single-repo  node  @acme/webapp  (no marker)
 
 info  UNDECLARED_PLATFORM  no platform-map.json here yet; run `platform-map init` to declare these 4 repositories as members of "acme"
 ```
@@ -119,12 +120,12 @@ pass `--config <file>` to use a different user file.
 ```
 $ platform-map
 acme (multi-repo)
-├── api     single-repo  @acme/api
+├── api     single-repo  node  @acme/api
 ├── mobile  single-repo  (not on this machine)
-├── shared  monorepo     @acme/shared
+├── shared  monorepo     node  @acme/shared
 │   ├── packages/config  @acme/config
 │   └── packages/ui      @acme/ui
-└── webapp  single-repo  @acme/webapp
+└── webapp  single-repo  node  @acme/webapp
 
 warning  MEMBER_MISSING  member "mobile" is listed but not found on this machine (expected at mobile; run `platform-map link` in its checkout if it lives elsewhere)
 ```
@@ -134,16 +135,53 @@ Every directory is classified as one of three shapes:
 | Shape | Recognized by |
 |---|---|
 | `multi-repo` | a platform file with `members` |
-| `monorepo` | a workspace manifest: `pnpm-workspace.yaml`, `package.json` `workspaces` (yarn or npm), or `lerna.json` |
+| `monorepo` | a workspace manifest from any supported ecosystem (the table below) |
 | `single-repo` | anything else |
 
 A member of a platform is classified the same way, so a member can be a
 monorepo, and its packages appear under it. Each repo carries its
-`packageName` and `packageManager` (from its lockfile) when they exist.
+`ecosystem`, its `packageName`, and its `packageManager` (from its lockfile,
+or the ecosystem's default) when they exist.
 
 Each repo and package also carries `dependsOn`: the platform's own package
-names it depends on, read from its package.json. That is how you answer "who
-uses `@acme/ui`?" across the whole platform, not just inside one monorepo.
+names it depends on, read from its manifest and matched within the same
+ecosystem. That is how you answer "who uses `@acme/ui`?" across the whole
+platform, not just inside one monorepo.
+
+### Supported ecosystems
+
+A repo's ecosystem is the one whose workspace manifest is present, else the
+first in this order whose package manifest is. A repo with manifests from
+two ecosystems and no workspace gets an `AMBIGUOUS_ECOSYSTEM` note. Every
+manifest is read with a small built-in parser; a shape it does not
+understand is a `MALFORMED_FILE` diagnostic, never a guess.
+
+<!-- ecosystems:start -->
+| Ecosystem | Package manifest | Workspace manifest | Package managers detected | What `dependsOn` reads |
+|---|---|---|---|---|
+| node | `package.json` | `pnpm-workspace.yaml`; `package.json` `workspaces` (yarn or npm); `lerna.json` | bun, npm, pnpm, yarn (from the lockfile) | `dependencies`, `devDependencies`, `peerDependencies` |
+| python | `pyproject.toml` | `pyproject.toml` `[tool.uv.workspace]` `members` and `exclude` | pdm, poetry, uv (from the lockfile), else pip | `[project]` `dependencies` and `optional-dependencies`, `[dependency-groups]`; names compared case-insensitively with `-`, `_`, and `.` alike |
+| rust | `Cargo.toml` | `Cargo.toml` `[workspace]` `members` and `exclude` | cargo | `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, also per target; a renamed dependency counts under its `package` name |
+| go | `go.mod` | `go.work` `use` lines | go | `require` lines (the module path is the package name) |
+<!-- ecosystems:end -->
+
+A platform can mix them. Each member is read with its own ecosystem's rules,
+and `dependsOn` never crosses ecosystems, so a Python package named `core`
+and a Go module named `core` stay apart:
+
+```
+poly (multi-repo)
+├── go    monorepo     go
+│   ├── api   example.com/acme/api
+│   └── core  example.com/acme/core
+├── py    monorepo     python  acme-py
+│   ├── packages/api   acme-api
+│   └── packages/core  acme_core
+├── rs    monorepo     rust
+│   ├── crates/api   acme-api
+│   └── crates/core  acme-core
+└── web   single-repo  node    web
+```
 
 ### As JSON
 
@@ -161,6 +199,7 @@ directory or from any member, and it never contains a machine path. Add
     {
       "name": "api",
       "mode": "single-repo",
+      "ecosystem": "node",
       "packageName": "@acme/api",
       "dependsOn": ["@acme/config"],
       "packages": [],
@@ -170,12 +209,13 @@ directory or from any member, and it never contains a machine path. Add
     {
       "name": "shared",
       "mode": "monorepo",
+      "ecosystem": "node",
       "packageName": "@acme/shared",
       "packageManager": "pnpm",
       "dependsOn": [],
       "packages": [
-        { "path": "packages/config", "packageName": "@acme/config", "dependsOn": [] },
-        { "path": "packages/ui", "packageName": "@acme/ui", "dependsOn": ["@acme/config"] }
+        { "path": "packages/config", "ecosystem": "node", "packageName": "@acme/config", "dependsOn": [] },
+        { "path": "packages/ui", "ecosystem": "node", "packageName": "@acme/ui", "dependsOn": ["@acme/config"] }
       ],
       "present": true,
       "marker": "ok"
@@ -210,7 +250,7 @@ flowchart LR
 
 | Code | Severity | Meaning |
 |---|---|---|
-| `MALFORMED_FILE` | error (warning for package.json and the user file) | A file failed to parse or validate. |
+| `MALFORMED_FILE` | error (warning for package and workspace manifests and the user file) | A file failed to parse or validate. |
 | `MARKER_MISMATCH` | error | A member's marker names a different platform. |
 | `MEMBER_MISSING` | warning | A listed member is not on this machine. |
 | `MARKER_MISSING` | warning | A member has no marker. |
@@ -219,6 +259,7 @@ flowchart LR
 | `UNLISTED_REPO` | info | A repository in the platform folder is not a member. |
 | `UNDECLARED_PLATFORM` | info | A folder of repos with no platform file; the map is a preview. |
 | `UNMATCHED_PATTERN` | info | A workspace glob matched no package. |
+| `AMBIGUOUS_ECOSYSTEM` | info | A repo has manifests from more than one ecosystem; the first in table order is reported. |
 
 `platform-map check` exits 1 when any error or warning is present. Info never
 fails a check.
@@ -266,7 +307,7 @@ check("/Users/dev/clients/acme").ok;         // true when nothing is wrong
 | `map(dir, options?)` | `PlatformMap`: the map described above. Throws only `DirectoryNotFoundError`. |
 | `check(dir, options?)` | `{ ok, problems }`: the error and warning diagnostics. |
 | `locate(dir, options?)` | `Locations`: absolute paths of the platform root and every present member. |
-| `detect(dir)` | `Detection`: `single-repo`, `monorepo` (with the manifest kind and globs), or `multi-repo`. |
+| `detect(dir)` | `Detection`: `single-repo`, `monorepo` (with the manifest kind, its ecosystem, and globs), or `multi-repo`. |
 | `discover(dir, options?)` | `Candidate[]`: child directories with a `.git` entry or a `package.json`. |
 | `planInit(dir, options?)` / `applyInit(plan, include)` | What `init` would write, then write it for the confirmed names. |
 | `planLink(dir, options?)` / `applyLink(plan)` | What `link` would record, then record it. |
@@ -291,7 +332,9 @@ npm run build        # dist/ (tsdown)
 npm test             # node --test over src/**/*.test.ts and test/**/*.test.ts
 npm run test:bun     # the same package under Bun
 npm run lint         # biome
+npm run lint:docs    # no private jargon in public files
 npm run typecheck    # tsc
+npm run docs:ecosystems   # regenerate the Supported ecosystems table in this README
 ```
 
 Unit tests live next to the file they test (`src/map.test.ts` tests

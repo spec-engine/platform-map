@@ -1,76 +1,45 @@
 // detect(): what shape is this directory? A platform file makes it a
-// multi-repo platform; a workspace manifest makes it a monorepo; otherwise it
-// is a single repo. Reads at most four files.
+// multi-repo platform; a workspace manifest from any ecosystem makes it a
+// monorepo; otherwise it is a single repo.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { ECOSYSTEMS, type WorkspaceRead } from "./ecosystems.ts";
 import { DirectoryNotFoundError } from "./errors.ts";
-import {
-  exists,
-  isDirectory,
-  readJsonObject,
-  readPlatformFile,
-} from "./files.ts";
-import { parsePnpmWorkspacePackages } from "./internal/yaml-subset.ts";
-import type { Detection, Diagnostic } from "./types.ts";
+import { exists, isDirectory, readPlatformFile } from "./files.ts";
+import type { Detection, EcosystemName } from "./types.ts";
 
-export interface WorkspaceProbe {
-  manifest: NonNullable<Detection["manifest"]>;
-  globs: string[];
-  diagnostics: Diagnostic[];
+export interface WorkspaceProbe extends WorkspaceRead {
+  ecosystem: EcosystemName;
 }
 
-function strings(v: unknown): string[] {
-  return Array.isArray(v)
-    ? v.filter((g): g is string => typeof g === "string")
-    : [];
+export function readText(file: string): string | null {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
 }
 
-/** Which workspace manifest, if any, declares packages in `dir`. Probe order:
- *  pnpm-workspace.yaml, package.json "workspaces" (yarn if a yarn lockfile or
- *  .yarnrc.yml is present, else npm), lerna.json. */
-export function probeWorkspace(dir: string): WorkspaceProbe | null {
-  const pnpm = path.join(dir, "pnpm-workspace.yaml");
-  if (exists(pnpm)) {
-    let text = "";
-    try {
-      text = fs.readFileSync(pnpm, "utf8");
-    } catch {
-      /* unreadable: treat as empty */
+/** Every workspace declared in `dir`, one per ecosystem at most, in table
+ *  order. Usually zero or one. */
+export function probeWorkspaces(dir: string): WorkspaceProbe[] {
+  const out: WorkspaceProbe[] = [];
+  for (const eco of ECOSYSTEMS) {
+    for (const kind of eco.workspaces) {
+      const file = path.join(dir, kind.file);
+      if (!exists(file)) continue;
+      const read = kind.read(readText(file) ?? "", dir);
+      if (read === null) continue;
+      out.push({ ecosystem: eco.name, ...read });
+      break;
     }
-    const parsed = parsePnpmWorkspacePackages(text);
-    return {
-      manifest: "pnpm-workspace",
-      globs: parsed.globs,
-      diagnostics: parsed.diagnostics,
-    };
   }
+  return out;
+}
 
-  const pkg = readJsonObject(path.join(dir, "package.json"));
-  if (pkg?.ok && pkg.value.workspaces !== undefined) {
-    const ws = pkg.value.workspaces;
-    const globs = Array.isArray(ws)
-      ? strings(ws)
-      : strings((ws as { packages?: unknown } | null)?.packages);
-    const isYarn =
-      exists(path.join(dir, "yarn.lock")) ||
-      exists(path.join(dir, ".yarnrc.yml"));
-    return {
-      manifest: isYarn ? "yarn-workspaces" : "npm-workspaces",
-      globs,
-      diagnostics: [],
-    };
-  }
-
-  const lerna = readJsonObject(path.join(dir, "lerna.json"));
-  if (lerna?.ok) {
-    const globs = Array.isArray(lerna.value.packages)
-      ? strings(lerna.value.packages)
-      : ["packages/*"];
-    return { manifest: "lerna", globs, diagnostics: [] };
-  }
-
-  return null;
+export function probeWorkspace(dir: string): WorkspaceProbe | null {
+  return probeWorkspaces(dir)[0] ?? null;
 }
 
 export function assertDirectory(dir: string): void {
@@ -87,6 +56,7 @@ export function detect(dir: string): Detection {
     return {
       mode: "monorepo",
       manifest: ws.manifest,
+      ecosystem: ws.ecosystem,
       workspaceGlobs: ws.globs,
     };
   return { mode: "single-repo" };

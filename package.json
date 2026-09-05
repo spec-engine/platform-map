@@ -1,6 +1,6 @@
 {
   "name": "@spec-engine/platform-map",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "license": "MIT",
   "description": "Document which repos make up a platform, discover the ones sitting next to each other, and see what is inside every repo and monorepo.",
@@ -14,6 +14,9 @@
     "yarn",
     "npm-workspaces",
     "lerna",
+    "uv",
+    "cargo",
+    "go-workspaces",
     "cli"
   ],
   "repository": {
@@ -59,7 +62,8 @@
     "test:bun": "bun test test-bun/",
     "typecheck": "tsc --noEmit",
     "lint": "biome ci .",
-    "lint:docs": "node scripts/check-public-docs.mjs"
+    "lint:docs": "node scripts/check-public-docs.mjs",
+    "docs:ecosystems": "node scripts/update-readme-ecosystems.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

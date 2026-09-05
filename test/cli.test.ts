@@ -84,7 +84,7 @@ test("--json is clean on stdout and identical from root and member; --mermaid an
     assert.match(run(root, ["--mermaid"], user).out, /^flowchart LR\n/);
     assert.match(
       run(root, ["--paths"], user).out,
-      new RegExp(`api {2,}single-repo {2,}@acme/api {2,}${root}/api`),
+      new RegExp(`api {2,}single-repo {2,}node {2,}@acme/api {2,}${root}/api`),
     );
     assert.ok(
       "paths" in JSON.parse(run(root, ["--json", "--paths"], user).out),

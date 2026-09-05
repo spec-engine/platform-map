@@ -8,11 +8,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assertDirectory } from "./detect.ts";
 import { discover } from "./discover.ts";
+import { ecosystem } from "./ecosystems.ts";
 import { readPlatformFile } from "./files.ts";
 import { describeRepo, type RepoFacts } from "./packages.ts";
 import { findStart, memberDir, resolvePlatform } from "./resolve.ts";
 import type {
   Diagnostic,
+  EcosystemName,
   Locations,
   Options,
   Package,
@@ -54,7 +56,11 @@ function draftRepo(
     mode: facts.mode,
     dependsOn: facts.deps,
     packages: facts.packages.map((p): Package => {
-      const pkg: Package = { path: p.path, dependsOn: [] };
+      const pkg: Package = {
+        path: p.path,
+        ecosystem: p.ecosystem,
+        dependsOn: [],
+      };
       if (p.packageName !== undefined) pkg.packageName = p.packageName;
       return pkg;
     }),
@@ -62,6 +68,7 @@ function draftRepo(
     marker,
     packageDeps: facts.packages.map((p) => p.deps),
   };
+  if (facts.ecosystem !== undefined) repo.ecosystem = facts.ecosystem;
   if (facts.packageName !== undefined) repo.packageName = facts.packageName;
   if (facts.packageManager !== undefined)
     repo.packageManager = facts.packageManager;
@@ -80,33 +87,52 @@ function absentRepo(name: string): DraftRepo {
   };
 }
 
-/** Replaces raw dependency names with the platform's own package names, and
- *  puts the optional keys in a fixed order so JSON output is stable. */
+/** Replaces raw dependency names with the platform's own package names in
+ *  the same ecosystem, and puts the optional keys in a fixed order so JSON
+ *  output is stable. */
 function finalize(drafts: DraftRepo[]): Repo[] {
-  const known = new Set<string>();
+  const key = (eco: EcosystemName, name: string): string =>
+    `${eco}\0${ecosystem(eco).canonical(name)}`;
+  const known = new Map<string, string>();
   for (const r of drafts) {
-    if (r.packageName !== undefined) known.add(r.packageName);
+    if (r.ecosystem !== undefined && r.packageName !== undefined)
+      known.set(key(r.ecosystem, r.packageName), r.packageName);
     for (const p of r.packages)
-      if (p.packageName !== undefined) known.add(p.packageName);
+      if (p.packageName !== undefined)
+        known.set(key(p.ecosystem, p.packageName), p.packageName);
   }
-  const own = (deps: string[], self: string | undefined): string[] =>
-    deps.filter((d) => known.has(d) && d !== self).sort(compare);
+  const own = (
+    eco: EcosystemName | undefined,
+    deps: string[],
+    self: string | undefined,
+  ): string[] => {
+    if (eco === undefined) return [];
+    const names = new Set<string>();
+    for (const d of deps) {
+      const found = known.get(key(eco, d));
+      if (found !== undefined && found !== self) names.add(found);
+    }
+    return [...names].sort(compare);
+  };
 
   return drafts
     .sort((a, b) => compare(a.name, b.name))
     .map((r): Repo => {
       const repo: Repo = { name: r.name, mode: r.mode } as Repo;
+      if (r.ecosystem !== undefined) repo.ecosystem = r.ecosystem;
       if (r.packageName !== undefined) repo.packageName = r.packageName;
       if (r.packageManager !== undefined)
         repo.packageManager = r.packageManager;
-      repo.dependsOn = own(r.dependsOn, r.packageName);
+      repo.dependsOn = own(r.ecosystem, r.dependsOn, r.packageName);
       repo.packages = r.packages
         .map((p, i): Package => {
-          const pkg: Package = {
-            path: p.path,
-            dependsOn: own(r.packageDeps[i] ?? [], p.packageName),
-          };
+          const pkg = { path: p.path, ecosystem: p.ecosystem } as Package;
           if (p.packageName !== undefined) pkg.packageName = p.packageName;
+          pkg.dependsOn = own(
+            p.ecosystem,
+            r.packageDeps[i] ?? [],
+            p.packageName,
+          );
           return pkg;
         })
         .sort((a, b) => compare(a.path, b.path));

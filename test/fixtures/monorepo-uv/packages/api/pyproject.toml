@@ -1,0 +1,16 @@
+[project]
+name = "acme-api"
+version = "0.1.0"
+dependencies = [
+  "acme-core[extra]>=0.1; python_version >= '3.12'",
+  "fastapi",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[dependency-groups]
+lint = ["ruff", { include-group = "dev" }]
+
+[tool.uv.sources]
+acme-core = { workspace = true }

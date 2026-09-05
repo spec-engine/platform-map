@@ -1,98 +1,128 @@
-// describeRepo(): the facts about one repository: single repo or monorepo,
-// its package name and package manager, its workspace packages, and the
-// dependency names each package.json declares. `dependsOn` is computed later
-// by map(), once every package name in the platform is known.
+// describeRepo(): the facts about one repository: which ecosystem describes
+// it, single repo or monorepo, its package name and package manager, its
+// workspace packages, and the dependency names each manifest declares.
+// `dependsOn` is computed later by map(), once every package name in the
+// platform is known.
 
 import * as path from "node:path";
-import { probeWorkspace } from "./detect.ts";
-import { exists, readJsonObject } from "./files.ts";
+import { probeWorkspaces, readText, type WorkspaceProbe } from "./detect.ts";
+import {
+  ECOSYSTEMS,
+  type Ecosystem,
+  ecosystem,
+  type ManifestRead,
+} from "./ecosystems.ts";
+import { exists } from "./files.ts";
 import { matchGlob } from "./internal/glob.ts";
 import { walk } from "./internal/walk.ts";
-import type { Diagnostic, Repo } from "./types.ts";
+import type { Diagnostic, EcosystemName, PackageManager } from "./types.ts";
 
 const MAX_DEPTH = 16;
 const MAX_ENTRIES = 10000;
-const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
-
-const LOCKFILES: Array<[string, NonNullable<Repo["packageManager"]>]> = [
-  ["pnpm-lock.yaml", "pnpm"],
-  ["yarn.lock", "yarn"],
-  ["package-lock.json", "npm"],
-  ["bun.lock", "bun"],
-  ["bun.lockb", "bun"],
-];
 
 export interface PackageFacts {
   path: string;
+  ecosystem: EcosystemName;
   packageName?: string;
   deps: string[];
 }
 
 export interface RepoFacts {
   mode: "single-repo" | "monorepo";
+  ecosystem?: EcosystemName;
   packageName?: string;
-  packageManager?: Repo["packageManager"];
+  packageManager?: PackageManager;
   deps: string[];
   packages: PackageFacts[];
   diagnostics: Diagnostic[];
 }
 
-/** Reads name and declared dependency names from a package.json. */
-function readPackage(
+/** Reads the ecosystem's manifest in `dir`; null when there is none. */
+function readManifest(
   dir: string,
+  eco: Ecosystem,
   subject: string,
   diagnostics: Diagnostic[],
-): { packageName?: string; deps: string[] } {
-  const read = readJsonObject(path.join(dir, "package.json"));
-  if (read === null) return { deps: [] };
-  if (!read.ok) {
+): ManifestRead | null {
+  const text = readText(path.join(dir, eco.manifest));
+  if (text === null) return null;
+  const read = eco.readManifest(text);
+  if (read.problem !== undefined) {
     diagnostics.push({
       code: "MALFORMED_FILE",
       severity: "warning",
       subject,
-      message: `${subject}/package.json: ${read.reason}`,
+      message: `${subject}/${eco.manifest}: ${read.problem}`,
     });
-    return { deps: [] };
   }
-  const pkg = read.value;
-  const deps = new Set<string>();
-  for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
-    const block = pkg[field];
-    if (block !== null && typeof block === "object" && !Array.isArray(block)) {
-      for (const name of Object.keys(block as object)) deps.add(name);
-    }
-  }
-  const out: { packageName?: string; deps: string[] } = {
-    deps: [...deps].sort(),
-  };
-  if (typeof pkg.name === "string" && NPM_NAME.test(pkg.name))
-    out.packageName = pkg.name;
-  return out;
+  return read;
 }
 
-function packageManager(dir: string): Repo["packageManager"] | undefined {
-  for (const [file, manager] of LOCKFILES) {
+function packageManager(
+  dir: string,
+  eco: Ecosystem,
+): PackageManager | undefined {
+  for (const [file, manager] of eco.lockfiles) {
     if (exists(path.join(dir, file))) return manager;
   }
-  return undefined;
+  return eco.defaultPackageManager;
+}
+
+/** The ecosystem that describes `dir`: the one whose workspace manifest is
+ *  present, else the first in table order whose package manifest is. */
+function chooseEcosystem(
+  dir: string,
+  subject: string,
+  diagnostics: Diagnostic[],
+): { eco: Ecosystem; workspace: WorkspaceProbe | null } | null {
+  const workspaces = probeWorkspaces(dir);
+  const withManifest = ECOSYSTEMS.filter(
+    (e) =>
+      exists(path.join(dir, e.manifest)) ||
+      workspaces.some((w) => w.ecosystem === e.name),
+  );
+  const candidates =
+    workspaces.length > 0
+      ? workspaces.map((w) => w.ecosystem)
+      : withManifest.map((e) => e.name);
+  const chosen = candidates[0];
+  if (chosen === undefined) return null;
+  if (candidates.length > 1) {
+    diagnostics.push({
+      code: "AMBIGUOUS_ECOSYSTEM",
+      severity: "info",
+      subject,
+      message: `"${subject}" has manifests for ${candidates.join(" and ")}; reporting ${chosen}`,
+    });
+  }
+  return {
+    eco: ecosystem(chosen),
+    workspace: workspaces.find((w) => w.ecosystem === chosen) ?? null,
+  };
 }
 
 export function describeRepo(dir: string, subject: string): RepoFacts {
   const diagnostics: Diagnostic[] = [];
-  const root = readPackage(dir, subject, diagnostics);
   const facts: RepoFacts = {
     mode: "single-repo",
-    deps: root.deps,
+    deps: [],
     packages: [],
     diagnostics,
   };
-  if (root.packageName !== undefined) facts.packageName = root.packageName;
-  const pm = packageManager(dir);
+  const choice = chooseEcosystem(dir, subject, diagnostics);
+  if (choice === null) return facts;
+  const { eco, workspace: ws } = choice;
+  facts.ecosystem = eco.name;
+
+  const root = readManifest(dir, eco, subject, diagnostics);
+  if (root !== null) {
+    facts.deps = root.deps;
+    if (root.packageName !== undefined) facts.packageName = root.packageName;
+  }
+  const pm = packageManager(dir, eco);
   if (pm !== undefined) facts.packageManager = pm;
 
-  const ws = probeWorkspace(dir);
   if (ws === null) return facts;
-
   facts.mode = "monorepo";
   for (const d of ws.diagnostics)
     diagnostics.push({ ...d, subject: `${subject}/${d.subject}` });
@@ -106,10 +136,18 @@ export function describeRepo(dir: string, subject: string): RepoFacts {
 
   for (const rel of matched.matched) {
     if (rel.split("/").includes("..")) continue;
-    const abs = path.join(dir, rel);
-    if (!exists(path.join(abs, "package.json"))) continue;
-    const pkg = readPackage(abs, `${subject}/${rel}`, diagnostics);
-    const entry: PackageFacts = { path: rel, deps: pkg.deps };
+    const pkg = readManifest(
+      path.join(dir, rel),
+      eco,
+      `${subject}/${rel}`,
+      diagnostics,
+    );
+    if (pkg === null) continue;
+    const entry: PackageFacts = {
+      path: rel,
+      ecosystem: eco.name,
+      deps: pkg.deps,
+    };
     if (pkg.packageName !== undefined) entry.packageName = pkg.packageName;
     facts.packages.push(entry);
   }

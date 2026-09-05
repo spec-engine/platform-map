@@ -2,6 +2,31 @@
 
 export type Mode = "single-repo" | "monorepo" | "multi-repo";
 
+/** The language ecosystems platform-map reads manifests for. */
+export type EcosystemName = "node" | "python" | "rust" | "go";
+
+export type PackageManager =
+  | "npm"
+  | "pnpm"
+  | "yarn"
+  | "bun"
+  | "uv"
+  | "poetry"
+  | "pdm"
+  | "pip"
+  | "cargo"
+  | "go";
+
+/** Which workspace manifest declared a monorepo's packages. */
+export type WorkspaceManifest =
+  | "pnpm-workspace"
+  | "yarn-workspaces"
+  | "npm-workspaces"
+  | "lerna"
+  | "uv-workspace"
+  | "cargo-workspace"
+  | "go-work";
+
 export interface PlatformMap {
   /** Platform name from the platform file; otherwise the directory name. */
   name: string;
@@ -22,12 +47,16 @@ export interface Repo {
   /** Member name from the platform file, or the directory name. */
   name: string;
   mode: "single-repo" | "monorepo";
-  /** The "name" field of the repo's package.json, when it has one. */
+  /** Which ecosystem's manifests describe the repo: the one whose workspace
+   *  manifest is present, else the first found in table order. Absent when
+   *  the repo has no package manifest at all. */
+  ecosystem?: EcosystemName;
+  /** The package name from the repo's own manifest, when it has one. */
   packageName?: string;
-  /** From the lockfile present in the repo, when there is one. */
-  packageManager?: "npm" | "pnpm" | "yarn" | "bun";
-  /** Package names from this platform that the repo's own package.json
-   *  depends on (dependencies, devDependencies, peerDependencies). Sorted. */
+  /** From the lockfile present in the repo, or the ecosystem's default. */
+  packageManager?: PackageManager;
+  /** Package names from this platform, in the same ecosystem, that the
+   *  repo's own manifest declares as dependencies. Sorted. */
   dependsOn: string[];
   /** The workspace packages of a monorepo; empty for a single repo. Sorted by path. */
   packages: Package[];
@@ -42,14 +71,17 @@ export interface Repo {
 export interface Package {
   /** Path relative to the repo root, e.g. "packages/ui". */
   path: string;
-  /** The "name" field of the package's package.json, when it has one. */
+  /** Always the ecosystem of the workspace that listed the package. */
+  ecosystem: EcosystemName;
+  /** The package name from the package's manifest, when it has one. */
   packageName?: string;
-  /** Package names from this platform that this package depends on. Sorted. */
+  /** Package names from this platform, in the same ecosystem, that this
+   *  package depends on. Sorted. */
   dependsOn: string[];
 }
 
 export type DiagnosticCode =
-  | "MALFORMED_FILE" // a platform-map.json, package.json, manifest, or the user file failed to parse or validate
+  | "MALFORMED_FILE" // a platform-map.json, a package or workspace manifest, or the user file failed to parse or validate
   | "MEMBER_MISSING" // listed in the platform file, not found on this machine
   | "MARKER_MISSING" // member has no platform-map.json marker
   | "MARKER_MISMATCH" // member's marker names a different platform
@@ -57,6 +89,7 @@ export type DiagnosticCode =
   | "PLATFORM_NOT_LOCATED" // marker names a platform this machine cannot find
   | "UNDECLARED_PLATFORM" // folder of repos with no platform file; the map is a preview
   | "UNMATCHED_PATTERN" // a workspace glob matched no package
+  | "AMBIGUOUS_ECOSYSTEM" // a repo has manifests from more than one ecosystem
   | "SCAN_TRUNCATED"; // a directory walk hit its depth or entry cap
 
 export interface Diagnostic {
@@ -70,8 +103,10 @@ export interface Diagnostic {
 export interface Detection {
   mode: Mode;
   /** Present when mode is "monorepo": which manifest declared the packages. */
-  manifest?: "pnpm-workspace" | "yarn-workspaces" | "npm-workspaces" | "lerna";
-  /** Present when mode is "monorepo": the raw globs from that manifest. */
+  manifest?: WorkspaceManifest;
+  /** Present when mode is "monorepo": the ecosystem of that manifest. */
+  ecosystem?: EcosystemName;
+  /** Present when mode is "monorepo": the raw globs or paths from that manifest. */
   workspaceGlobs?: string[];
 }
 
