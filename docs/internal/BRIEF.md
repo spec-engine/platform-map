@@ -1,3 +1,8 @@
+> **Internal design history.** Written during the initial build; it references
+> the author's private tooling and ticket IDs. Nothing here is required to use
+> the package. The public contract is `src/types.ts`, `README.md`, and
+> `REQUIREMENTS.md`.
+
 # platform-map — Project Brief
 
 **Date:** 2026-07-11 · **License:** MIT · **Org:** spec-engine (public)

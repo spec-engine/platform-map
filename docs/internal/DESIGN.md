@@ -1,3 +1,8 @@
+> **Internal design history.** Written during the initial build; it references
+> the author's private tooling and ticket IDs. Nothing here is required to use
+> the package. The public contract is `src/types.ts`, `README.md`, and
+> `REQUIREMENTS.md`.
+
 # platform-map — Unit Model & API Design
 
 **Companion:** BRIEF.md (decisions D1–D8)
@@ -404,4 +409,3 @@ No code swap — a prompt swap. `platform-mapper` step 1 becomes `platform-map -
 
 ---
 
-*Review request: the two seams most worth a skeptical read are the DF `monorepo discover` route replacement (row 4 of the DF table — richest existing behavior, most fixture-porting) and the SE pin-overlay sketch (does a units-walk overlay actually reach everything `discover.ts` returns today, including `skipped[]` ordering guarantees?).*
