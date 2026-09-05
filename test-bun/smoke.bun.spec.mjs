@@ -1,38 +1,14 @@
-// Bun-runtime smoke test (see ci.yml for the lane it runs in).
+// Bun smoke test. Proves the built package works when run by Bun.
 //
-// WHY THIS FILE EXISTS AND WHY IT LIVES OUTSIDE test/:
-// The original stack decision assumed "basic node:test usage
-// runs unmodified and fully under `bun test`", citing Bun's own compat-matrix
-// docs and a passing fixture in oven-sh/bun's source tree. That assumption is
-// FALSIFIED under Bun 1.3.14: any node:test file containing a nested test()
-// call performed asynchronously relative to another top-level test — which
-// several of this package's test/*.test.js files do (temp-dir setup/teardown
-// interleaved with sibling test registration) — throws
-// "test() inside another test() is not yet implemented in Bun"
-// (oven-sh/bun#5090). This is a Bun engine limitation, not a bug in this
-// package's tests, and it is not fixable by editing test/*.test.js without
-// rewriting them away from node:test entirely (out of scope for the dual-runtime requirement's
-// intent: prove platform-map works AS A CONSUMER under Bun, not prove
-// node:test's own compat surface).
+// Why this is a separate file instead of running test/ under `bun test`:
+// Bun's node:test support rejects a test that starts while another one is
+// still running (oven-sh/bun#5090), and several files in test/ do that. So
+// test/ runs on Node only, and this file runs on Bun only. It uses Bun's own
+// test API and exercises the real public surface (detect() and toJSON()).
 //
-// RESOLUTION: keep test/*.test.js exactly as written, running only under
-// `node --test` (Node 20/22 lanes). Separately, prove the BUILT package
-// (dist/) works correctly when consumed from Bun by writing a real bun:test
-// smoke test against the actual public surface (detect() + toJSON) — this
-// still satisfies the dual-runtime requirement's intent ("test suite passes across Node 20,
-// Node 22, and Bun") because it genuinely exercises platform-map under the
-// Bun runtime; it just uses Bun's own native test API instead of trying to
-// force node:test's incompatible surface through Bun's compat shim.
-//
-// ISOLATION: this file must NOT be discovered by `node --test`, but MUST be
-// discovered by `bun test`. Node's default test-file discovery matches
-// *.test.{js,mjs,cjs}, *-test.*, *_test.*, test.*, test-*.*, and anything
-// under a directory literally named "test" — none of those include
-// `.spec.`. Bun's discovery requires ".test", "_test_", ".spec", or
-// "_spec_" in the filename — `.spec.mjs` satisfies Bun while staying
-// invisible to Node. Combined with living in test-bun/ (not test/), this
-// file is picked up by `bun test test-bun/` and ignored by `node --test`.
-// Verified empirically: `node --test` does not discover this file.
+// Why `.spec.mjs` in `test-bun/`: `node --test` does not pick up `.spec.`
+// files or this directory, while `bun test test-bun/` does. Each runner sees
+// exactly the files it can run.
 
 import { expect, test } from "bun:test";
 import * as fs from "node:fs";

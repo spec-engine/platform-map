@@ -60,12 +60,11 @@ jobs:
       - run: npm ci --omit=dev
       - if: matrix.runtime != 'bun'
         run: node --test
-      # node:test does not run unmodified under `bun test` (oven-sh/bun#5090 —
-      # "test() inside another test()"), so test/*.test.js stays node:test-only
-      # (Node 20/22 lanes above); this lane runs a separate bun:test smoke suite
-      # (test-bun) against the built dist/ artifact instead, which still proves
-      # the package works under the real Bun runtime.
-      # See test-bun/smoke.bun.spec.mjs for the full rationale.
+      # Bun cannot run the files in test/: its node:test support rejects a test
+      # that starts while another one is still running (oven-sh/bun#5090), and
+      # several files here do that. So the Node lanes run test/, and this lane
+      # runs the small Bun-native suite in test-bun/ against the built package
+      # to prove it works on Bun.
       - if: matrix.runtime == 'bun'
         run: bun test test-bun/
 
