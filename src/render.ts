@@ -17,6 +17,10 @@ export function render(map: PlatformMap, locations?: Locations): string {
   lines.push(`${map.name} (${title})${locations ? `  ${locations.root}` : ""}`);
 
   const nameWidth = Math.max(4, ...map.repos.map((r) => r.name.length));
+  const ecoWidth = Math.max(
+    0,
+    ...map.repos.map((r) => r.ecosystem?.length ?? 0),
+  );
   const single = map.mode !== "multi-repo" && map.repos.length === 1;
 
   map.repos.forEach((repo, i) => {
@@ -33,6 +37,7 @@ export function render(map: PlatformMap, locations?: Locations): string {
       const cells = [
         `${branch}${pad(repo.name, nameWidth)}`,
         pad(repo.mode, 11),
+        repo.ecosystem === undefined ? "" : pad(repo.ecosystem, ecoWidth),
         repo.packageName ?? "",
         notes.length > 0 ? `(${notes.join("; ")})` : "",
         loc ?? "",

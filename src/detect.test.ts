@@ -16,6 +16,7 @@ test("workspace manifests are recognized in probe order", () => {
   assert.deepEqual(detect(path.join(fixtures, "monorepo-pnpm")), {
     mode: "monorepo",
     manifest: "pnpm-workspace",
+    ecosystem: "node",
     workspaceGlobs: ["packages/*", "apps/*", "!**/test/**"],
   });
   assert.equal(
@@ -55,5 +56,26 @@ test("a leaf marker alone does not change the shape", () => {
 test("a missing directory throws", () => {
   assert.throws(() => detect(path.join(fixtures, "does-not-exist")), {
     name: "DirectoryNotFoundError",
+  });
+});
+
+test("uv, cargo, and go.work workspaces are recognized with their ecosystem", () => {
+  assert.deepEqual(detect(path.join(fixtures, "monorepo-uv")), {
+    mode: "monorepo",
+    manifest: "uv-workspace",
+    ecosystem: "python",
+    workspaceGlobs: ["packages/*"],
+  });
+  assert.deepEqual(detect(path.join(fixtures, "monorepo-cargo")), {
+    mode: "monorepo",
+    manifest: "cargo-workspace",
+    ecosystem: "rust",
+    workspaceGlobs: ["crates/*", "!crates/skip"],
+  });
+  assert.deepEqual(detect(path.join(fixtures, "monorepo-go")), {
+    mode: "monorepo",
+    manifest: "go-work",
+    ecosystem: "go",
+    workspaceGlobs: ["core", "api"],
   });
 });

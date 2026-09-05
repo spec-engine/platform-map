@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { acmePlatform, rm, tmpDir, write } from "../test/helpers.ts";
 import { check, locate, map } from "./map.ts";
-import { toJSON } from "./render.ts";
+import { render, toJSON } from "./render.ts";
 
 function withPlatform(
   fn: (root: string, opts: { userConfigPath: string }) => void,
@@ -216,4 +216,101 @@ test("a nonexistent directory throws DirectoryNotFoundError", () => {
   assert.throws(() => map("/nonexistent/platform-map-test"), {
     name: "DirectoryNotFoundError",
   });
+});
+
+test("a mixed platform: node, python, rust, and go members, each declared and mapped; dependsOn stays within an ecosystem", () => {
+  const dir = tmpDir();
+  try {
+    const fixtures = path.join(import.meta.dirname, "..", "test", "fixtures");
+    const root = path.join(dir, "poly");
+    const members: Record<string, string | null> = {
+      web: null,
+      py: "monorepo-uv",
+      rs: "monorepo-cargo",
+      go: "monorepo-go",
+    };
+    for (const [name, fixture] of Object.entries(members)) {
+      const memberDir = path.join(root, name);
+      if (fixture !== null)
+        fs.cpSync(path.join(fixtures, fixture), memberDir, { recursive: true });
+      fs.mkdirSync(path.join(memberDir, ".git"), { recursive: true });
+      write(path.join(memberDir, "platform-map.json"), {
+        platform: "poly",
+        member: name,
+      });
+    }
+    // "acme-core" exists as a python and a rust package; node must not link to either.
+    write(path.join(root, "web", "package.json"), {
+      name: "web",
+      dependencies: { "acme-core": "*" },
+    });
+    write(path.join(root, "platform-map.json"), {
+      name: "poly",
+      members: Object.keys(members),
+    });
+
+    const pm = map(root);
+    assert.deepEqual(pm.diagnostics, []);
+    assert.deepEqual(
+      pm.repos.map((r) => [
+        r.name,
+        r.ecosystem,
+        r.mode,
+        r.packageManager,
+        r.dependsOn,
+      ]),
+      [
+        ["go", "go", "monorepo", "go", []],
+        ["py", "python", "monorepo", "uv", []],
+        ["rs", "rust", "monorepo", "cargo", []],
+        ["web", "node", "single-repo", undefined, []],
+      ],
+    );
+    const by = Object.fromEntries(pm.repos.map((r) => [r.name, r]));
+    assert.deepEqual(
+      by.go?.packages.map((p) => [p.path, p.ecosystem, p.dependsOn]),
+      [
+        ["api", "go", ["example.com/acme/core"]],
+        ["core", "go", []],
+      ],
+    );
+    // the python dependency is written "acme-core"; the target is declared "acme_core"
+    assert.deepEqual(
+      by.py?.packages.map((p) => [p.path, p.packageName, p.dependsOn]),
+      [
+        ["packages/api", "acme-api", ["acme_core"]],
+        ["packages/core", "acme_core", []],
+      ],
+    );
+    assert.deepEqual(
+      by.rs?.packages.map((p) => [p.path, p.dependsOn]),
+      [
+        ["crates/api", ["acme-core"]],
+        ["crates/core", []],
+      ],
+    );
+    assert.equal(
+      toJSON(map(path.join(root, "rs", "crates", "api"))),
+      toJSON(pm),
+    );
+    assert.equal(
+      render(pm),
+      [
+        "poly (multi-repo)",
+        "├── go    monorepo     go",
+        "│   ├── api   example.com/acme/api",
+        "│   └── core  example.com/acme/core",
+        "├── py    monorepo     python  acme-py",
+        "│   ├── packages/api   acme-api",
+        "│   └── packages/core  acme_core",
+        "├── rs    monorepo     rust",
+        "│   ├── crates/api   acme-api",
+        "│   └── crates/core  acme-core",
+        "└── web   single-repo  node    web",
+        "",
+      ].join("\n"),
+    );
+  } finally {
+    rm(dir);
+  }
 });
