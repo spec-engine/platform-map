@@ -1,6 +1,6 @@
 {
   "name": "@spec-engine/platform-map",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "license": "MIT",
   "description": "Document which repos make up a platform, discover the ones sitting next to each other, and see what is inside every repo and monorepo.",
