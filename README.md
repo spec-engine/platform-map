@@ -1,482 +1,297 @@
 # @spec-engine/platform-map
 
-A small, zero-runtime-dependency TypeScript library and CLI that answers one
-question deterministically: **"What is this platform made of?"**
+Document which repositories make up a platform (a mobile app, an API, a web
+app, a CLI, and the packages they share), discover the ones sitting next to
+each other, and see what is inside every repo and monorepo. Two small
+checked-in files, one convention, zero dependencies.
 
-Point it at a directory and it produces a topology map of the repos and
-packages found there: the **units** (repos and workspace packages), the
-**edges** between them (workspace dependencies), and **diagnostics** for
-everything it could not resolve. The same tree always produces byte-identical
-JSON, so developers, CI jobs, and code agents working across many repos can
-share one map instead of re-deriving their own.
+## Getting started in 30 seconds
 
-It handles four shapes, and mixes of them:
-
-| Shape | Example | How it is recognized |
-|---|---|---|
-| Single repo | one `package.json` | nothing else found |
-| Monorepo | pnpm / yarn / npm workspaces, lerna | a workspace manifest |
-| Multi-repo platform | several sibling git repos | a checked-in `platform-map.json`, or sibling `.git` dirs |
-| Multi-repo of monorepos | sibling repos, some of them monorepos | recursion: any repo unit that is a monorepo gets its packages expanded |
-
-Design principles and known gaps:
-[PRINCIPLES.md](https://github.com/spec-engine/platform-map/blob/main/PRINCIPLES.md).
-Architecture:
-[docs/architecture.md](https://github.com/spec-engine/platform-map/blob/main/docs/architecture.md).
-
-## Install
-
-```bash
-npm install @spec-engine/platform-map
-```
-
-Zero runtime dependencies. Requires Node `>=20` or Bun. Ships ESM and
-CommonJS builds with matching type declarations.
-
-## Example
-
-Three unrelated repos (a plain service, a whole monorepo, and a stray
-experiment) become one map:
-
-```mermaid
-flowchart TD
-  subgraph acme ["acme — multi-repo platform"]
-    svc["svc-api — repo, app"]
-    subgraph web ["web-mono — repo, monorepo"]
-      site["packages/site — app"] -- "workspace-dependency" --> ui["packages/ui — library"]
-    end
-  end
-  scratch["scratch-experiment — .git child nobody declared"] -. "UNCONFIGURED_SIBLING (flagged, never absorbed)" .-> acme
-```
-
-[docs/demo.html](https://github.com/spec-engine/platform-map/blob/main/docs/demo.html)
-shows directory trees next to the maps the CLI produced from them, one plate
-per shape. To rebuild locally from a clone:
-
-```bash
-npm run demo                            # builds fixtures, runs the CLI, 28 checked assertions
-node scripts/demo-platform.mjs --keep   # same, but leaves the trees on disk to explore
-```
-
-## CLI
+You have a folder with your platform's repos in it:
 
 ```
-platform-map [dir]            print the topology tree (default)
-platform-map --json [dir]     print the deterministic PlatformMap JSON
-platform-map detect [dir]     print the raw detect() classification (JSON)
-platform-map graph [dir]      print the dependency graph (JSON, or --dot)
-platform-map init [dir]       write a proposed platform-map.json
-
---json            emit JSON instead of the human tree
---dot             emit Graphviz DOT (graph only)
---yes, -y         skip the confirmation prompt (init only)
---boundary <dir>  containment boundary for upward platform resolution
-                  (default: the home directory)
---help, -h        show help and exit 0
---version, -V     print the version and exit 0
+~/clients/acme/
+  api/  webapp/  mobile/  shared/
 ```
 
-`dir` defaults to the current directory. In tree mode diagnostics go to
-stderr; in `--json` mode they are embedded in the output and stderr stays
-empty, so `platform-map --json | jq` is safe.
+See what platform-map sees, without writing anything:
 
-Exit codes:
+```
+$ cd ~/clients/acme
+$ npx @spec-engine/platform-map
+acme (multi-repo, undeclared)
+├── api     single-repo  @acme/api  (no marker)
+├── mobile  single-repo  acme-mobile  (no marker)
+├── shared  monorepo     @acme/shared  (no marker)
+│   ├── packages/config  @acme/config
+│   └── packages/ui      @acme/ui
+└── webapp  single-repo  @acme/webapp  (no marker)
 
-| Code | Meaning |
-|---|---|
-| 0 | mapped; no error-severity diagnostics |
-| 1 | usage error, nonexistent directory, or malformed `platform-map.json` |
-| 2 | mapped, but at least one `error`-severity diagnostic is present |
-
-The library core never writes. `init` is the one writer, and it always
-confirms first unless `--yes` is passed.
-
-## Library
-
-```js
-// ESM
-import { map, detect, graph, deriveRole, toJSON } from "@spec-engine/platform-map";
-// CommonJS
-const { map, detect, graph, deriveRole, toJSON } = require("@spec-engine/platform-map");
-
-const pm = await map(".");            // full assembly
-console.log(toJSON(pm));              // byte-identical JSON string
-
-const g = graph(pm);                  // pure views over pm.units + pm.edges
-g.roots();                            // units nothing depends on
-g.leaves();                           // units that depend on nothing
-g.dependentsOf("packages/ui");        // "what breaks if I touch this"
-g.cycles();                           // [] when acyclic
+info  UNDECLARED_PLATFORM  no platform-map.json here yet; run `platform-map init` to declare these 4 repositories as members of "acme"
 ```
 
-### Functions
+Make it official:
 
-| Function | Returns | Notes |
-|---|---|---|
-| `map(root, opts?)` | `Promise<PlatformMap>` | Resolves the platform root, detects the shape, reads every config source, builds edges, derives roles. Throws only `RootNotFoundError` (the directory does not exist) and `MalformedConfigError` (a present `platform-map.json` fails to parse or validate). Everything else becomes a diagnostic. |
-| `detect(root, opts?)` | `Detection` | Cheap synchronous shape probe: `mode`, workspace `flavor` and globs, `orchestrator` overlay (turbo/nx), and candidate `siblings`. No git subprocesses. |
-| `graph(pm)` | `PlatformGraph` | `toDepGraph()`, `dependenciesOf(name)`, `dependentsOf(name)`, `roots()`, `leaves()`, `cycles()`. Pure; all results lexically sorted. |
-| `deriveRole(signals)` | `Role` | The role classifier, exported so you can recompute or audit a unit's `role` from its `signals`. |
-| `toJSON(pm)` / `serialize(pm)` | `string` / `PlatformMap` | The single sort-and-stringify seam. See Determinism. |
-
-### `MapOptions`
-
-| Option | Default | Effect |
-|---|---|---|
-| `adapters` | all enabled | Disable a config source by name: `{ adapters: { siblings: false } }`. Names: `canonical`, `dark-factory`, `spec-engine`, `workspace`, `siblings`. |
-| `units` | none | Inject units directly (`{ name, path, ref? }[]`). They rank just below the canonical config and carry `sources: ["caller"]`. |
-| `ignore` | `[]` | Extra ignore globs for child enumeration. |
-| `scanRoot` | `".."` | Where the zero-config sibling scan looks, relative to `root`. |
-| `boundary` | `os.homedir()` | The directory above which upward platform resolution never ascends. See Run-anywhere resolution. |
-| `refProbe` | enabled | Set `false` to skip the git `origin/HEAD` probe; every `ref` is then `null`. The probe is timeout-bounded, so a loaded machine can otherwise yield `null` where a fast one yields a branch name. |
-
-All exported types (`PlatformMap`, `Unit`, `Edge`, `Diagnostic`, `UnitSignals`,
-`PlatformGraph`, `Detection`, `MapOptions`, `PlatformMapConfig`,
-`PlatformDefinition`, `MemberMarker`, `PlatformLocalConfig`, `AdapterName`,
-`Mode`, `Role`) are the public contract. Changing any shape is a
-semver-major change.
-
-## The output model
-
-```ts
-interface PlatformMap {
-  name: string;          // config name, else basename(root)
-  root: string;          // the resolved platform root (the given dir unless a definition re-anchors it)
-  mode: "single-repo" | "multi-repo" | "monorepo";
-  units: Unit[];         // sorted by name
-  edges: Edge[];         // sorted by (from, to)
-  diagnostics: Diagnostic[];
-  schemaVersion: 1;
-}
-
-interface Unit {
-  name: string;          // platform-relative path, unique within the map
-  path: string;          // relative path from the containing unit's root
-  kind: "repo" | "workspace-package";
-  mode: Mode;            // "monorepo" means units[] is populated
-  ref: string | null;    // resolved default branch (repos only)
-  units: Unit[];         // recursive children
-  signals: UnitSignals;  // observed facts; absent means "not determined"
-  role: "library" | "app" | "unknown";
-  sources: string[];     // which config sources contributed, in precedence order
-}
-
-interface Edge {
-  from: string;          // dependent Unit.name
-  to: string;            // dependency Unit.name
-  via: "workspace-dependency";   // the only edge kind today
-}
+```
+$ npx @spec-engine/platform-map init --yes
 ```
 
-`signals` are facts read from `package.json` and the filesystem: `private`,
-`hasExports`, `hasBin`, `hasStartScript`, `packageName`, `hasDockerfile`,
-`hasDeployConfig`, `languages`, `packageManager`, `workspaceInDegree`,
-`workspaceOutDegree`, plus the integration flags listed under Integrations.
-A missing signal is never treated as `false`.
+That writes `platform-map.json` in the folder naming the four members, and a
+one-line marker in each member. Commit them. From now on `platform-map` in
+the folder or in any member prints the same map, and `platform-map check`
+tells CI when the files and the disk disagree.
 
-### How `role` is derived
+Prefer to confirm each repo? Drop `--yes` and it asks, one per line.
 
-`role` is a derived view, not a stored fact. Rules are evaluated top-down,
-first match wins, and an absent signal casts no vote:
+## The two files
 
-1. `hasDockerfile` or `hasDeployConfig` or `hasStartScript` → **app**
-2. `workspaceInDegree > 0` (something imports it) → **library**
-3. `hasExports === true` and `private !== false` → **library**
-4. `workspaceInDegree === 0` and `workspaceOutDegree > 0` and no exports
-   (a pure sink) → **app**
-5. otherwise → **unknown**
+**Platform file**, committed in the platform repo:
 
-A canonical `overrides[name].role` beats every rule.
+```json
+{ "name": "acme", "members": ["api", "mobile", "shared", "webapp"] }
+```
 
-## Configuration
+**Leaf marker**, committed in each member repo:
 
-Config is optional forever: a directory with no `platform-map.json` still
-maps. When present, `platform-map.json` is authoritative and always wins
-over anything detected.
+```json
+{ "platform": "acme", "member": "api" }
+```
 
-### How sources are combined
+Both are named `platform-map.json`. Which one a file is depends on which key
+it has. Neither contains a path: they say what is connected, not where
+anything lives, so they are identical on every developer's machine.
 
-Sources are folded in fixed precedence, highest first:
+## The convention
 
-1. `canonical` — `platform-map.json`
-2. caller-injected `MapOptions.units`
-3. `dark-factory` — `.factory/df-config.json` (see Integrations)
-4. `spec-engine` — `spec-engine.member.json` (see Integrations)
-5. `workspace` — pnpm / yarn / npm / lerna workspace manifests
-6. `siblings` — the zero-config sibling `.git` scan
+The platform repo is a small git repository whose job is to hold the platform
+file. Members are its child directories, named after their member name:
 
-The first writer of a field wins. A lower source that disagrees produces a
-`CONFIG_CONFLICT` diagnostic naming both values, never a silent override.
-Unconfirmed sibling candidates become `UNCONFIGURED_SIBLING`.
+```
+acme/                   platform repo   (platform-map.json: name + members)
+  api/                  member repo     (platform-map.json: platform + member)
+  webapp/
+  mobile/
+  shared/               a monorepo member; its packages are listed in the map
+```
 
-Workspace-manifest detection probes, in order: `pnpm-workspace.yaml` >
-yarn workspaces > npm workspaces > `lerna.json`. `turbo.json` / `nx.json` are
-recorded as an `orchestrator` overlay only; they never decide the flavor.
+Clone this way and nothing else is needed. `platform-map` in the platform
+directory, in any member, or in any subdirectory of a member finds the same
+platform.
 
-### Unit-level config
+## When your checkout does not follow the convention
 
-The shape a single repo or monorepo commits at its own root:
+Where repos live is per-developer, so it is never committed. One file per
+machine records it:
+
+`~/.config/platform-map/platforms.json`
 
 ```json
 {
-  "name": "acme-api",
-  "units": [
-    { "name": "svc-api", "path": "../acme-service-api", "ref": "main" }
-  ],
-  "ignore": ["scratch-*"],
-  "overrides": {
-    "packages/tooling": { "role": "library" }
+  "acme": {
+    "root": "/Users/dev/clients/acme",
+    "members": { "mobile": "/Users/dev/work/acme-mobile" }
   }
 }
 ```
 
-All keys are optional. `name` overrides the map name (else the directory's
-basename). A non-empty `units` array declares the unit set explicitly, which
-turns off sibling promotion: detected siblings not listed here become
-`UNCONFIGURED_SIBLING`. `overrides` sets per-unit roles. Unknown top-level
-keys are ignored for forward compatibility; known keys are validated
-strictly.
+`root` says where the platform repo is. `members` lists only the members that
+are not child directories of the root. `platform-map link` writes this file
+for you:
 
-### Platform-root convention
+```
+$ cd ~/work/acme-mobile
+$ platform-map link --root ~/clients/acme
+```
 
-Platform membership is declared in checked-in files. Adoption is
-progressive:
+Run without `--root` when the platform is already known on this machine.
+From then on `platform-map` in that checkout reads its marker, looks the
+platform up, and resolves every other member. Set `PLATFORM_MAP_CONFIG` or
+pass `--config <file>` to use a different user file.
 
-1. **Single repo** — an in-repo `platform-map.json`, or nothing at all;
-   detection works zero-config.
-2. **Monorepo** — same file, same repo; workspace manifests supply the
-   members.
-3. **Multi-repo platform** — a small git repo (the *platform root*) holds the
-   checked-in canonical definition; the member repos are its child
-   directories (untracked by the platform repo's git). Running `platform-map`
-   anywhere in the platform (the root, a member root, or any nested member
-   subdir) yields the same map, byte-identical.
+## What the map contains
 
-One filename, `platform-map.json`, three shapes discriminated by key
-presence (checked in this order: `members` wins, then `platform`, else the
-unit-level config above).
+```
+$ platform-map
+acme (multi-repo)
+├── api     single-repo  @acme/api
+├── mobile  single-repo  (not on this machine)
+├── shared  monorepo     @acme/shared
+│   ├── packages/config  @acme/config
+│   └── packages/ui      @acme/ui
+└── webapp  single-repo  @acme/webapp
 
-#### Platform definition
+warning  MEMBER_MISSING  member "mobile" is listed but not found on this machine (expected at mobile; run `platform-map link` in its checkout if it lives elsewhere)
+```
 
-Committed at the platform root. Identity only: the platform name plus the
-member list. A member's `path` defaults to its `name` (the child-dir
-convention); omit it unless the member lives in a subdirectory:
+Every directory is classified as one of three shapes:
+
+| Shape | Recognized by |
+|---|---|
+| `multi-repo` | a platform file with `members` |
+| `monorepo` | a workspace manifest: `pnpm-workspace.yaml`, `package.json` `workspaces` (yarn or npm), or `lerna.json` |
+| `single-repo` | anything else |
+
+A member of a platform is classified the same way, so a member can be a
+monorepo, and its packages appear under it. Each repo carries its
+`packageName` and `packageManager` (from its lockfile) when they exist.
+
+Each repo and package also carries `dependsOn`: the platform's own package
+names it depends on, read from its package.json. That is how you answer "who
+uses `@acme/ui`?" across the whole platform, not just inside one monorepo.
+
+### As JSON
+
+`platform-map --json` prints the map as JSON. It is deterministic: the same
+files and the same disk produce byte-identical output, from the platform
+directory or from any member, and it never contains a machine path. Add
+`--paths` to include where each repo is on this machine.
 
 ```json
 {
   "name": "acme",
-  "members": [
-    { "name": "svc-api" },
-    { "name": "svc-worker" },
-    { "name": "webapp" }
+  "mode": "multi-repo",
+  "declared": true,
+  "repos": [
+    {
+      "name": "api",
+      "mode": "single-repo",
+      "packageName": "@acme/api",
+      "dependsOn": ["@acme/config"],
+      "packages": [],
+      "present": true,
+      "marker": "ok"
+    },
+    {
+      "name": "shared",
+      "mode": "monorepo",
+      "packageName": "@acme/shared",
+      "packageManager": "pnpm",
+      "dependsOn": [],
+      "packages": [
+        { "path": "packages/config", "packageName": "@acme/config", "dependsOn": [] },
+        { "path": "packages/ui", "packageName": "@acme/ui", "dependsOn": ["@acme/config"] }
+      ],
+      "present": true,
+      "marker": "ok"
+    }
   ],
-  "ignore": ["scratch", "archive-*"]
+  "diagnostics": [],
+  "schemaVersion": 2
 }
 ```
 
-(`platform`, `root`, `units`, and `overrides` are rejected alongside
-`members`: a definition is identity, not configuration.)
+### As a diagram
 
-#### Member marker
+`platform-map --mermaid` prints the map as a Mermaid flowchart: one node per
+repo and package, one arrow per `dependsOn`. Paste it into a README or a
+pull request.
 
-Committed inside each member. Identity plus a root hint, no sibling lists,
-no machine paths:
-
-```json
-{
-  "platform": "acme",
-  "root": ".."
-}
+```mermaid
+flowchart LR
+  n_api["api (@acme/api)"]
+  subgraph n_shared["shared (monorepo)"]
+    n_shared_packages_config["@acme/config"]
+    n_shared_packages_ui["@acme/ui"]
+  end
+  n_webapp["webapp (@acme/webapp)"]
+  n_api --> n_shared_packages_config
+  n_shared_packages_ui --> n_shared_packages_config
+  n_webapp --> n_shared_packages_config
+  n_webapp --> n_shared_packages_ui
 ```
-
-`root` defaults to `".."` and may be omitted. A member with a marker still
-maps standalone as a plain repo when its platform root is missing; the
-marker adds context, never a hard dependency.
-
-#### Back-compat firewall
-
-A repo whose `platform-map.json` has neither `members` nor `platform`
-self-describes exactly as a unit-level config, and the upward platform
-resolution deliberately stops at such a repo.
-
-### Per-user disk locations: `platform-map.local.json`
-
-The committed definition carries identity; where members live on your
-machine is per-user. By default a member is expected at its conventional
-child directory under the platform root. When your checkout lives elsewhere,
-add `platform-map.local.json` next to the definition:
-
-```json
-{
-  "locations": {
-    "svc-worker": "../checkouts/svc-worker"
-  }
-}
-```
-
-Values are relative to the platform root (or absolute). **Add
-`platform-map.local.json` to the platform repo's `.gitignore`**: it is
-per-user machine state and must never be committed. An override changes only
-where the member is *read* from disk: the unit's `path` in output stays the
-conventional relative path, output is byte-identical with and without an
-equivalent override, and machine paths never appear in output. A malformed
-local file degrades to a `MALFORMED_CONFIG` warning; it can never brick the
-map.
-
-### Run-anywhere resolution and the boundary
-
-`map()` resolves the platform root before detection: from the given
-directory it walks upward, following a member marker's root hint or stopping
-at a directory that holds a definition. The walk is bounded: it never
-ascends above `MapOptions.boundary` (default `os.homedir()`), and marker
-hints or local overrides that physically resolve outside the boundary
-(symlinks included) become diagnostics (`UNIT_PATH_ESCAPE`, "escapes
-resolution boundary") and are never followed. The boundary governs the
-upward walk and marker/override following only: a definition at the invoked
-directory itself is always honored, so pointing `map()` (or the CLI)
-directly at a platform root gets full platform semantics even at `/tmp`,
-`/app`, or a CI workspace outside `$HOME`. From inside a member outside the
-boundary, pass `--boundary <dir>` on the CLI (or `MapOptions.boundary`) to
-contain the walk there.
-
-Under a definition, member units always carry `sources: ["canonical"]`: a
-listed member is a canonically declared identity regardless of physical
-presence or local relocation. A listed member missing from disk is still
-emitted (with empty signals) plus a `PLATFORM_DRIFT` warning; an unlisted
-`.git` child of the platform root surfaces as `UNCONFIGURED_SIBLING`;
-membership is always explicit, never guessed.
-
-### Bootstrapping with `init`
-
-`platform-map init` at a manifest-less directory whose children include git
-repos proposes the full platform bootstrap:
-
-```bash
-$ platform-map init .          # or: init --yes to skip the prompt
-{
-  "platform-map.json": { "name": "acme", "members": [ ... ] },
-  "svc-api/platform-map.json": { "platform": "acme", "root": ".." },
-  "webapp/platform-map.json": { "platform": "acme", "root": ".." }
-}
-platform-map: will write 3 files:
-  platform-map.json
-  svc-api/platform-map.json
-  webapp/platform-map.json
-Write 3 files? [y/N]
-```
-
-The plan (stdout) is one JSON object keyed by root-relative file path; the
-listing and prompt go to stderr. `init` never overwrites: if the root
-`platform-map.json` exists the whole init refuses; if a member's file exists
-that one file is skipped with a note and the rest are still written. It
-never writes `platform-map.local.json` and never touches `.gitignore`.
 
 ## Diagnostics
 
-Every diagnostic carries a `code`, a `severity` (`info` | `warning` |
-`error`), an optional platform-relative `path`, and a human-readable
-`message` with a stable prefix per code.
+| Code | Severity | Meaning |
+|---|---|---|
+| `MALFORMED_FILE` | error (warning for package.json and the user file) | A file failed to parse or validate. |
+| `MARKER_MISMATCH` | error | A member's marker names a different platform. |
+| `MEMBER_MISSING` | warning | A listed member is not on this machine. |
+| `MARKER_MISSING` | warning | A member has no marker. |
+| `PLATFORM_NOT_LOCATED` | warning | A marker names a platform this machine cannot find. |
+| `SCAN_TRUNCATED` | warning | A directory walk hit its depth or entry cap. |
+| `UNLISTED_REPO` | info | A repository in the platform folder is not a member. |
+| `UNDECLARED_PLATFORM` | info | A folder of repos with no platform file; the map is a preview. |
+| `UNMATCHED_PATTERN` | info | A workspace glob matched no package. |
 
-| Code | Meaning |
-|------|---------|
-| `UNCONFIGURED_SIBLING` | A candidate sibling repo has no config confirming it as a unit. |
-| `CONFIG_CONFLICT` | Two sources disagree on a value; precedence was applied and both are reported. |
-| `MALFORMED_CONFIG` | A JSON/shape error was found in a source file (integration config or local override, not the canonical file, which throws). |
-| `UNMATCHED_PATTERN` | A workspace/ignore glob pattern matched nothing. |
-| `CYCLE_SUSPECTED` | The edge graph contains a cycle; mapping still succeeds. |
-| `UNIT_PATH_ESCAPE` | A resolved unit path would escape the platform root or boundary; the unit is dropped. |
-| `CENSUS_TRUNCATED` | A depth or entry-count cap was hit during the file census. |
-| `PLATFORM_DRIFT` | A platform file disagrees with reality: marker platform-name or root-hint mismatch, dangling marker, listed-but-missing member, dangling local override (all warnings), or a non-repo child dir at a platform root (info). Stable message prefix per sub-case. |
+`platform-map check` exits 1 when any error or warning is present. Info never
+fails a check.
 
-## Determinism
+## CLI
 
-`toJSON(pm)` and `serialize(pm)` are the single sort/stringify seam for a
-`PlatformMap`: the same logical map always serializes to a byte-identical
-JSON string, regardless of the order its `units`, `edges`, or `diagnostics`
-arrays were constructed in. Nested `units[]` are sorted recursively by
-`name`; `edges` are sorted by `(from, to)`; `diagnostics` are sorted by
-`(severity: error > warning > info, then code, then path)`. All comparisons
-use plain `<`/`>` on strings, never a locale-aware comparison, so output is
-stable across environments and Node versions. Output never contains absolute
-filesystem paths or timestamps.
+```
+platform-map [dir]              print the map (tree)
+platform-map --json [dir]       print the map as deterministic JSON
+platform-map --mermaid [dir]    print the map as a Mermaid flowchart
+platform-map --paths [dir]      include where each repo is on this machine
+platform-map init [dir]         discover repos here and declare them as members
+platform-map link [dir]         record where this checkout lives
+platform-map check [dir]        exit 1 if the files and the disk disagree
 
-## Security posture
+--yes, -y          answer yes to every prompt
+--dry-run          init: print the plan, write nothing
+--root <dir>       link: where the platform directory is
+--config <file>    per-user file (default: $PLATFORM_MAP_CONFIG or ~/.config/platform-map/platforms.json)
+--ignore <name>    skip a directory during discovery (repeatable)
+```
 
-Read-only core (the CLI's `init` is the only writer); no network; no git
-mutations; the one subprocess is a timeout-bounded `git` ref probe. Every
-resolved unit path is checked against the platform root and the boundary;
-symlinks are never followed during walks; file-census scans are
-depth- and count-capped and report truncation; package names are validated
-before entering the model; `pnpm-workspace.yaml` is parsed with a regex
-subset, not a YAML library.
+`dir` defaults to the current directory. The tree goes to stdout and
+diagnostics to stderr; `--json` output is always clean. Exit codes: 0, or 1
+on a usage error, a missing directory, an error-severity diagnostic, or a
+failed `check`. `init` and `link` refuse to write without a terminal unless
+`--yes` is passed. `init` never overwrites an existing marker.
 
-## Integrations
+## Library
 
-Two optional config sources read files written by other tools. Both are
-enabled by default, contribute only linkage facts, and can be turned off
-with `MapOptions.adapters`.
+The CLI is a thin wrapper. Every command is a synchronous function that reads
+files and directories only; nothing runs a subprocess or touches the network.
 
-### `dark-factory`: `.factory/df-config.json`
+```js
+import { map, toJSON, toMermaid, check } from "@spec-engine/platform-map";
 
-Dark Factory is a workflow tool for code
-agents that keeps its state under `.factory/`. If `<root>/.factory/df-config.json`
-exists, this source reads it:
+const pm = map("/Users/dev/clients/acme");   // PlatformMap
+toJSON(pm);                                  // the deterministic JSON string
+toMermaid(pm);                               // the flowchart
+check("/Users/dev/clients/acme").ok;         // true when nothing is wrong
+```
 
-- A **pointer-only** file (exactly `{ "platform": { "factoryDir": "..." } }`)
-  sets `signals.hasDfPointer: true` on the root unit. The pointer is never
-  followed.
-- A **full** config contributes `platform.repos[]` as `kind: "repo"` units.
-  Its other fields, including `dependsOn`, are ignored: no edges are derived
-  from it.
-- Any other shape sets `signals.dfConfigConflict: true`.
-- An unparseable file becomes a `MALFORMED_CONFIG` warning.
+| Function | Returns |
+|---|---|
+| `map(dir, options?)` | `PlatformMap`: the map described above. Throws only `DirectoryNotFoundError`. |
+| `check(dir, options?)` | `{ ok, problems }`: the error and warning diagnostics. |
+| `locate(dir, options?)` | `Locations`: absolute paths of the platform root and every present member. |
+| `detect(dir)` | `Detection`: `single-repo`, `monorepo` (with the manifest kind and globs), or `multi-repo`. |
+| `discover(dir, options?)` | `Candidate[]`: child directories with a `.git` entry or a `package.json`. |
+| `planInit(dir, options?)` / `applyInit(plan, include)` | What `init` would write, then write it for the confirmed names. |
+| `planLink(dir, options?)` / `applyLink(plan)` | What `link` would record, then record it. |
+| `render(map, locations?)`, `toJSON(map)`, `toMermaid(map)`, `formatDiagnostics(map)` | The three outputs, plus the diagnostics block. |
 
-Disable with `{ adapters: { "dark-factory": false } }`.
+`options.userConfigPath` overrides the user file; `options.ignore` adds
+directory names to skip. Every type is exported. ESM and CommonJS.
 
-### `spec-engine`: `spec-engine.member.json` and `spec-engine/`
+## Install
 
-Spec Engine is a requirements-catalog tool
-whose members carry a `spec-engine.member.json`. This source reads that file:
+```
+npm install @spec-engine/platform-map
+```
 
-- A member file sets `signals.hasSpecEngineConfig: true`.
-- A `members` glob in it expands into `<child>/<rel>` sub-units, each
-  carrying the same signal. The member file's `ignore` array belongs to Spec
-  Engine's own scanner and never filters this expansion; only the
-  caller-level `MapOptions.ignore` filters which directories are enumerated.
-- A malformed member file becomes a `MALFORMED_CONFIG` warning.
-
-A directory holding a `spec-engine/` directory and no `platform-map.json` is
-treated as a multi-repo platform by that convention. Its children are
-classified as:
-
-1. A child carrying `spec-engine.member.json` is a confirmed member. Config
-   presence alone confirms it (no `.git` or `package.json` needed). A member
-   with a `.git` entry is `kind: "repo"`; a bare config member is
-   `kind: "workspace-package"` and is never git-probed.
-2. An unconfigured child that looks like a repo root (`.git` dir or file, or
-   `package.json`) yields an `UNCONFIGURED_SIBLING` diagnostic.
-3. A plain folder (`docs/`, `src/`, …) is silent: no unit, no diagnostic.
-
-A `platform-map.json` of any shape at the root always wins over this
-convention. Disable with `{ adapters: { "spec-engine": false } }`, which
-also disables the platform convention.
+Node 24 or newer, or Bun. Zero runtime dependencies.
 
 ## Contributing
 
-```bash
+```
 npm ci
-npm run build        # tsdown; needs Node >= 22.18 to run the bundler
-npm test             # node:test over the built dist/
-npm run test:bun     # bun:test smoke over the same dist/
-npm run demo         # materialize every shape and map it live
-npm run lint:docs    # public docs and comments stay free of internal jargon
+npm run build        # dist/ (tsdown)
+npm test             # node --test over src/**/*.test.ts and test/**/*.test.ts
+npm run test:bun     # the same package under Bun
+npm run lint         # biome
+npm run typecheck    # tsc
 ```
 
-Tests import the built `dist/`, never `src/`, so they run unmodified on
-Node 20, Node 22, and Bun. The requirement catalog behind every promise is
-[REQUIREMENTS.md](https://github.com/spec-engine/platform-map/blob/main/REQUIREMENTS.md);
-the pipeline is drawn in
-[docs/architecture.md](https://github.com/spec-engine/platform-map/blob/main/docs/architecture.md).
+Unit tests live next to the file they test (`src/map.test.ts` tests
+`src/map.ts`). `test/cli.test.ts` drives the built CLI end to end. The design
+notes are in [docs/spec.md](./docs/spec.md); the pipeline is drawn in
+[docs/architecture.md](./docs/architecture.md).
 
 ## License
 

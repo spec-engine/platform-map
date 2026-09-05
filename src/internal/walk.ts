@@ -1,35 +1,29 @@
-// [PRIM-04] A symlink-safe, depth/entry-capped directory walker: the bounded
-// file-census primitive. `dirent.isSymbolicLink()` is checked for EVERY entry
-// at EVERY recursion depth, BEFORE deciding whether to recurse; symlinked
-// entries are skipped entirely (never realpath-followed, never in output),
-// which alone terminates any symlink cycle. Hitting maxDepth or maxEntries
-// appends a CENSUS_TRUNCATED diagnostic (never a silent partial result) and
-// halts further descent. `readdir` is a test-only seam (directory-listing
-// order is not guaranteed across platforms); production callers never pass it.
+// A bounded directory walk. Never follows symlinks, skips node_modules and
+// dot-directories, and stops with a SCAN_TRUNCATED diagnostic when the depth
+// or entry cap is hit. Output order does not depend on the filesystem.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Diagnostic } from "../types.js";
-
-export interface WalkDirent {
-  name: string;
-  isSymbolicLink(): boolean;
-  isDirectory(): boolean;
-}
+import type { Diagnostic } from "../types.ts";
 
 export interface WalkOptions {
   maxDepth: number;
   maxEntries: number;
-  /** TEST-ONLY seam; production callers never override this. */
-  readdir?: (dir: string) => WalkDirent[];
 }
 
 export interface WalkResult {
+  /** Root-relative POSIX paths of every file and directory seen, sorted. */
   entries: string[];
   diagnostics: Diagnostic[];
 }
 
-function defaultReaddir(dir: string): WalkDirent[] {
+function compare(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function readdir(dir: string): fs.Dirent[] {
   try {
     return fs.readdirSync(dir, { withFileTypes: true });
   } catch {
@@ -37,77 +31,52 @@ function defaultReaddir(dir: string): WalkDirent[] {
   }
 }
 
-function compareCodeUnit(a: string, b: string): number {
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
-}
-
-function prunedDir(name: string): boolean {
-  return name === "node_modules" || name.startsWith(".");
-}
-
-function truncated(locus: string, reason: string): Diagnostic {
+function truncated(subject: string, reason: string): Diagnostic {
   return {
-    code: "CENSUS_TRUNCATED",
+    code: "SCAN_TRUNCATED",
     severity: "warning",
-    path: locus,
-    message: `CENSUS_TRUNCATED: ${reason} at ${locus}`,
+    subject,
+    message: `directory scan stopped early (${reason}) at ${subject}`,
   };
 }
 
-/**
- * Walks `root` and returns every non-symlinked file/directory entry as a
- * root-relative POSIX path in plain code-unit sort order, identical
- * regardless of underlying directory-listing order. Never follows symlinks
- * (checked at every depth); halts and emits a single CENSUS_TRUNCATED
- * diagnostic the first time `maxDepth` or `maxEntries` would be exceeded.
- */
 export function walk(root: string, opts: WalkOptions): WalkResult {
-  const { maxDepth, maxEntries } = opts;
-  const readdir = opts.readdir ?? defaultReaddir;
-
   const entries: string[] = [];
   const diagnostics: Diagnostic[] = [];
-  let entryCount = 0;
+  let count = 0;
   let capped = false;
 
   function recurse(absDir: string, relDir: string, depth: number): void {
-    if (capped) return;
-
-    const dirents = [...readdir(absDir)].sort((a, b) =>
-      compareCodeUnit(a.name, b.name),
-    );
-
+    const dirents = readdir(absDir).sort((a, b) => compare(a.name, b.name));
     for (const dirent of dirents) {
       if (capped) return;
-
-      if (dirent.isSymbolicLink()) continue; // never followed, never included
-      if (dirent.isDirectory() && prunedDir(dirent.name)) continue;
-
-      if (entryCount >= maxEntries) {
-        diagnostics.push(truncated(relDir, "maxEntries exceeded"));
+      if (dirent.isSymbolicLink()) continue;
+      if (
+        dirent.isDirectory() &&
+        (dirent.name === "node_modules" || dirent.name.startsWith("."))
+      ) {
+        continue;
+      }
+      if (count >= opts.maxEntries) {
+        diagnostics.push(truncated(relDir, "too many entries"));
         capped = true;
         return;
       }
-
-      const relPath = relDir === "." ? dirent.name : `${relDir}/${dirent.name}`;
-      entries.push(relPath);
-      entryCount++;
-
+      const rel = relDir === "." ? dirent.name : `${relDir}/${dirent.name}`;
+      entries.push(rel);
+      count++;
       if (dirent.isDirectory()) {
-        if (depth + 1 > maxDepth) {
-          diagnostics.push(truncated(relPath, "maxDepth exceeded"));
+        if (depth + 1 > opts.maxDepth) {
+          diagnostics.push(truncated(rel, "too deep"));
           capped = true;
           return;
         }
-        recurse(path.join(absDir, dirent.name), relPath, depth + 1);
+        recurse(path.join(absDir, dirent.name), rel, depth + 1);
       }
     }
   }
 
   recurse(root, ".", 0);
-  entries.sort(compareCodeUnit);
-
+  entries.sort(compare);
   return { entries, diagnostics };
 }

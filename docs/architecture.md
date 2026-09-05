@@ -1,88 +1,55 @@
 # Architecture
 
-platform-map owns three concerns: **detect** (what shape is this
-place), **enumerate** (normalize every config surface into one unit model),
-and **graph** (dependency edges and views over them). Everything else is a
-door onto the same engine: the library API and the CLI.
-
-The engine is a pipeline of pure stages around one impure edge. Source
-adapters read config surfaces; a precedence fold reconciles them (detection
-proposes, config disposes); one serialize seam makes output byte-identical.
-Exactly two errors escape `map()`: nonexistent root and malformed canonical
-config. Every other failure becomes a diagnostic in the map itself.
-
-## The map() pipeline
+Everything is a plain function over the filesystem. The CLI in
+`bin/platform-map.ts` parses arguments, calls one function, prints, and sets
+the exit code.
 
 ```mermaid
 flowchart TD
-  CLI["CLI<br/>bin/platform-map.ts"] --> MAP
-  LIB["library caller<br/>map() / detect() / graph()"] --> MAP
+  CLI["bin/platform-map.ts"] --> MAP
+  CLI --> INIT["planInit / applyInit<br/>src/init.ts"]
+  CLI --> LINK["planLink / applyLink<br/>src/link.ts"]
+  CLI --> CHECK["check / locate<br/>src/map.ts"]
 
-  MAP["map()<br/>src/map.ts"] --> PR["platform resolution (pre-detect)<br/>internal/platform-root.ts<br/>definition at root > marker upward walk > none<br/>bounded by MapOptions.boundary"]
-  PR --> DET["detect()  src/detect.ts<br/>manifest probe: pnpm > yarn > npm > lerna<br/>else sibling scan (internal/scan.ts)"]
+  MAP["map()<br/>src/map.ts"] --> START["findStart<br/>src/resolve.ts<br/>walk up to the nearest platform-map.json or .git"]
+  START --> RES["resolvePlatform<br/>platform file here → root<br/>marker → parent, or the user file"]
+  RES --> MEMBERS["one describeRepo per member<br/>src/packages.ts"]
+  MEMBERS --> DESC["detect + workspace globs<br/>src/detect.ts, internal/glob.ts, internal/walk.ts"]
+  DESC --> DEPS["dependsOn: each package.json's deps ∩ the platform's package names"]
+  DEPS --> DIAG["markers, missing members, unlisted repos → diagnostics"]
+  DIAG --> SORT["sort repos, packages, diagnostics"]
+  SORT --> OUT["PlatformMap"]
+  OUT --> R1["render (tree)"]
+  OUT --> R2["toJSON"]
+  OUT --> R3["toMermaid"]
 
-  DET --> FOLD["adapter fold<br/>adapters/index.ts PRECEDENCE"]
-
-  subgraph SOURCES ["source adapters: canonical > caller > tool adapters > workspace > siblings"]
-    A1["canonical<br/>platform-map.json"]
-    A2["caller<br/>MapOptions.units"]
-    A3["dark-factory<br/>.factory/df-config.json"]
-    A4["spec-engine<br/>spec-engine.member.json"]
-    A5["workspace<br/>glob-expanded packages"]
-    A6["siblings<br/>provisional .git candidates"]
-  end
-
-  FOLD --> A1 --> MRG
-  FOLD --> A2 --> MRG
-  FOLD --> A3 --> MRG
-  FOLD --> A4 --> MRG
-  FOLD --> A5 --> MRG
-  FOLD --> A6 --> MRG
-
-  MRG["merge()  src/merge.ts<br/>detection proposes, config disposes:<br/>first writer wins, CONFIG_CONFLICT on disagreement,<br/>unconfirmed siblings become UNCONFIGURED_SIBLING"]
-
-  MRG --> ENR["enrich (map.ts)<br/>censusSignals: package.json + fs facts<br/>nested-monorepo recursion (workspace adapter only)<br/>ref probe: git origin/HEAD via bounded exec"]
-
-  ENR --> GRP["graph pass<br/>buildEdges (edges.ts), degrees,<br/>cycles (internal/scc.ts), applyRoles (role.ts)"]
-
-  GRP --> SER["serialize.ts<br/>the sole sort site"]
-  SER --> PM["PlatformMap<br/>units + edges + diagnostics<br/>byte-identical JSON"]
-
-  PM --> GV["graph(pm)  src/graph.ts<br/>pure views; toDepGraph() for<br/>consumers' own schedulers"]
-  PM --> REN["cli-render.ts<br/>tree | --json | DOT | graph projection"]
+  INIT --> DISC["discover<br/>src/discover.ts<br/>children with .git or package.json"]
+  FILES["src/files.ts<br/>platform-map.json (both shapes), platforms.json"] --> RES
+  FILES --> INIT
+  FILES --> LINK
 ```
 
-Signals are facts; `role` is a derived view any consumer can recompute via
-the exported `deriveRole()`, and canonical `overrides` beat derivation.
-Tool-specific semantics stay in the consuming tools; adapters carry only
-linkage signals.
+## Files
 
-Primitives under `src/internal/`: `walk` (bounded, symlink-safe), `glob`
-(ReDoS-safe subset), `yaml-subset` (pnpm `packages:` only), `path-guard`
-(escape checks), `exec`/`ref-probe` (the one subprocess), `df-pointer` (the
-pointer-only predicate for `.factory/df-config.json`, shared by the scan and
-two adapters), `scc`
-(Tarjan, shared by the CYCLE_SUSPECTED diagnostic and `graph().cycles()`).
+| File | Job |
+|---|---|
+| `src/types.ts` | The public types. |
+| `src/files.ts` | Read and validate the platform file, the leaf marker, and the per-user file. Write them. |
+| `src/detect.ts` | `single-repo` / `monorepo` / `multi-repo` for one directory; which workspace manifest. |
+| `src/discover.ts` | Child directories that look like repositories. |
+| `src/packages.ts` | Facts about one repo: package name, package manager, workspace packages, declared deps. |
+| `src/resolve.ts` | Find the platform root from wherever the command ran. |
+| `src/map.ts` | `map`, `locate`, `check`. |
+| `src/init.ts`, `src/link.ts` | The two writing commands, each split into a plan and an apply. |
+| `src/render.ts` | Tree, JSON, Mermaid. |
+| `src/internal/` | The glob matcher, the bounded directory walk, and the pnpm YAML subset. |
 
-## How each platform shape is reached
+## Rules that hold everywhere
 
-```mermaid
-flowchart TD
-  S["invoked directory"] --> Q1{"platform definition?<br/>at the root, found by the<br/>upward walk, or via a member marker"}
-  Q1 -->|yes| MR1["multi-repo, declared<br/>members are canonical units;<br/>unlisted .git children flag<br/>UNCONFIGURED_SIBLING"]
-  Q1 -->|no| Q2{"spec-engine/ dir<br/>at the root?"}
-  Q2 -->|yes| MR2["multi-repo, spec-engine convention<br/>children carrying spec-engine.member.json<br/>are confirmed members"]
-  Q2 -->|no| Q3{"workspace manifest?"}
-  Q3 -->|yes| MONO["monorepo<br/>workspace-package units,<br/>workspace-dependency edges"]
-  Q3 -->|no| Q4{"sibling .git repos<br/>in the parent dir?"}
-  Q4 -->|yes| MR3["multi-repo, zero-config<br/>siblings promoted to repo units"]
-  Q4 -->|no| SINGLE["single-repo<br/>one unit"]
-
-  MR1 --> NEST["recursive, not modal: any repo unit that itself<br/>detects a workspace manifest reports mode monorepo<br/>and gets its packages expanded at its own node"]
-  MR2 --> NEST
-  MR3 --> NEST
-```
-
-Two invariants hold on every path: absence of a signal is never asserted as
-false, and every dropped or ambiguous thing becomes a diagnostic, never a
-silent skip.
+- Nothing throws except `DirectoryNotFoundError`. A broken file is a diagnostic.
+- `map` output never contains an absolute path, and every array is sorted with
+  plain string comparison. Same files and same disk give the same bytes.
+- Symlinks are never followed. Directory walks are capped and say so when
+  they stop early.
+- Only `applyInit` and `applyLink` write, and only what their plan lists.
+  `applyInit` never overwrites a marker.
