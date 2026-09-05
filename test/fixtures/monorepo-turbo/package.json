@@ -1,7 +1,0 @@
-{
-  "name": "turbo-root",
-  "private": true,
-  "workspaces": [
-    "packages/*"
-  ]
-}

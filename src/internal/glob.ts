@@ -1,12 +1,8 @@
-// A deliberately narrow, zero-dep glob subset, the shapes workspace manifests
-// actually use: literal segments, `*` (one segment, with intra-segment
-// wildcarding), `**` (zero-or-more segments), and pnpm's leading `!negation`.
-// Brace expansion, extglob, and character classes are out of scope. Matching
-// is SEGMENT-BY-SEGMENT via an iterative two-pointer algorithm; `**` is never
-// compiled to a RegExp (a `(.*)+`-style regex is exactly the ReDoS class this
-// forbids). No `RegExp` literal or constructor appears in this module.
+// A small glob matcher for workspace manifests: literal segments, `*`,
+// `**`, and a leading `!` to exclude. Matching is segment by segment with
+// no regular expressions, so hostile patterns cannot cause backtracking.
 
-import type { Diagnostic } from "../types.js";
+import type { Diagnostic } from "../types.ts";
 
 export interface MatchGlobResult {
   matched: string[];
@@ -17,13 +13,9 @@ function splitSegments(p: string): string[] {
   return p.split("/").filter((seg) => seg.length > 0);
 }
 
-/**
- * Character-level wildcard match within one segment: the classic two-pointer
- * greedy algorithm (remember the last `*` and a fallback position, backtrack
- * only the fallback on mismatch); polynomial worst case, no RegExp.
- */
+/** `*` within one segment, two-pointer greedy scan. */
 function wildcardMatchSegment(pattern: string, text: string): boolean {
-  if (pattern === "*") return true; // the common case: whole-segment wildcard
+  if (pattern === "*") return true;
   let pi = 0;
   let ti = 0;
   let starIdx = -1;
@@ -48,11 +40,7 @@ function wildcardMatchSegment(pattern: string, text: string): boolean {
   return pi === pattern.length;
 }
 
-/**
- * Segment-level matcher: `**` uses the same iterative greedy/fallback scan
- * generalized to whole segments, NEVER a compiled regex; worst case is
- * polynomial in pattern segments times candidate segments.
- */
+/** `**` across segments, same greedy scan one level up. */
 function matchSegments(patSegs: string[], candSegs: string[]): boolean {
   let pi = 0;
   let ci = 0;
@@ -78,24 +66,21 @@ function matchSegments(patSegs: string[], candSegs: string[]): boolean {
       return false;
     }
   }
-  // A trailing `**` in the pattern matches the zero-segments-remaining case.
   while (pi < patSegs.length && patSegs[pi] === "**") pi++;
   return pi === patSegs.length;
 }
 
-function compareCodeUnit(a: string, b: string): number {
+function compare(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;
   return 0;
 }
 
 /**
- * Matches `candidatePaths` against `patterns` in DECLARATION ORDER: an
- * inclusion pattern matches against the full candidate universe and adds to
- * the accumulated set; a `!negation` matches against the CURRENT accumulated
- * set and removes. Only a zero-match inclusion emits UNMATCHED_PATTERN; a
- * negation removing nothing is silent. `matched` is sorted in plain code-unit
- * order, never locale-aware.
+ * Applies `patterns` in order to `candidatePaths`. An inclusion adds its
+ * matches; a `!pattern` removes from what has been added so far. An inclusion
+ * that matches nothing yields an UNMATCHED_PATTERN diagnostic. The result is
+ * sorted with plain string comparison.
  */
 export function matchGlob(
   patterns: string[],
@@ -106,8 +91,7 @@ export function matchGlob(
 
   for (const pattern of patterns) {
     const isNegation = pattern.startsWith("!");
-    const rawPattern = isNegation ? pattern.slice(1) : pattern;
-    const patSegs = splitSegments(rawPattern);
+    const patSegs = splitSegments(isNegation ? pattern.slice(1) : pattern);
 
     if (isNegation) {
       for (const candidate of accumulated) {
@@ -128,13 +112,12 @@ export function matchGlob(
     if (matchCount === 0) {
       diagnostics.push({
         code: "UNMATCHED_PATTERN",
-        severity: "warning",
-        path: pattern,
-        message: `UNMATCHED_PATTERN: glob pattern matched nothing: ${pattern}`,
+        severity: "info",
+        subject: pattern,
+        message: `workspace pattern matched no package: ${pattern}`,
       });
     }
   }
 
-  const matched = Array.from(accumulated).sort(compareCodeUnit);
-  return { matched, diagnostics };
+  return { matched: Array.from(accumulated).sort(compare), diagnostics };
 }

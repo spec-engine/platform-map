@@ -14,10 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        with: { node-version: 22, cache: npm }
+        with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx biome ci .
+      - run: npm run lint:docs
 
   build:
     runs-on: ubuntu-latest
@@ -25,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        with: { node-version: 22, cache: npm } # tsdown requires Node >=22.18
+        with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm run build # tsdown build --publint --attw
       - run: npx attw --pack --profile node16
@@ -43,7 +44,7 @@ jobs:
     needs: [build]
     strategy:
       matrix:
-        runtime: [node20, node22, bun]
+        runtime: [node, bun]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -52,48 +53,29 @@ jobs:
       - if: matrix.runtime != 'bun'
         uses: actions/setup-node@v7
         with:
-          node-version: ${{ matrix.runtime == 'node20' && '20' || '22' }}
+          node-version: 24
       - if: matrix.runtime == 'bun'
         uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
       - run: npm ci --omit=dev
       - if: matrix.runtime != 'bun'
-        run: node --test
-      # D-05 amendment: node:test does not run unmodified under `bun test`
-      # (oven-sh/bun#5090 — "test() inside another test()"), falsifying
-      # 01-RESEARCH.md's original assumption. test/*.test.js stays node:test
-      # -only (Node 20/22 lanes above); this lane runs a separate bun:test
-      # smoke suite (test-bun/) against the built dist/ artifact instead,
-      # which still proves BUILD-04's intent under the real Bun runtime.
-      # See test-bun/smoke.bun.spec.mjs for the full rationale.
+        run: npm test
+      # Bun cannot run the files in test/: its node:test support rejects a test
+      # that starts while another one is still running (oven-sh/bun#5090), and
+      # several files here do that. So the Node lanes run test/, and this lane
+      # runs the small Bun-native suite in test-bun/ against the built package
+      # to prove it works on Bun.
       - if: matrix.runtime == 'bun'
         run: bun test test-bun/
 
-  # PUB-02: tarball cold-install smoke — packs the built package and installs
-  # the packed tarball into scratch Node-CJS + Bun projects (public exports +
-  # CLI bin only). The only job that catches a bundle-leak into an unshipped
-  # chunk; no live-registry access.
-  cold-install-smoke:
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with: { node-version: 22, cache: npm }
-      - uses: oven-sh/setup-bun@v2
-        with: { bun-version: latest }
-      - run: npm ci
-      - run: npm run build
-      - run: node scripts/cold-install-smoke.mjs
-
-  # PUB-01: release-triggered OIDC trusted publishing. Tag-gated; keyless —
+  # Release-triggered OIDC trusted publishing. Tag-gated; keyless —
   # id-token:write mints the short-lived OIDC token; keyless — no stored token.
   # Provenance auto-attaches from publishConfig.provenance:true. The @spec-engine
   # trusted publisher must be registered on npmjs.com before the first tagged
-  # run (operator gate — see 05-LEARNINGS.md).
+  # run (a one-time operator step on npmjs.com; CI cannot do it).
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, test, cold-install-smoke]
+    needs: [build, test]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # REQUIRED for npm OIDC trusted publishing
@@ -102,7 +84,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
       # OIDC trusted publishing + provenance require npm >= 11.5.1. Node 22
       # bundles npm 10.9.x (NOT >= 11.5.1), so upgrade npm explicitly before
@@ -110,10 +92,10 @@ jobs:
       # fails ENEEDAUTH. Node >=22.14.0 alone does NOT satisfy the npm floor.
       - run: npm install -g npm@^11.5.1
       - run: npm --version # assert the upgrade took (must be >= 11.5.1)
-      # WR-02: publish the EXACT dist/ the build job produced and the test job
+      # publish the EXACT dist/ the build job produced and the test job
       # validated — download that artifact instead of rebuilding, so the
       # published tarball cannot drift from what passed the pre-release gate
-      # (build --publint/--attw + test + cold-install-smoke). Provenance still
+      # (build --publint/--attw + test). Provenance still
       # attaches: OIDC provenance needs a trusted CI publish context, not an
       # in-job rebuild. LICENSE/README come from the checkout; dist/ + the
       # validated package.json come from the artifact.

@@ -1,28 +1,27 @@
 // Public entry point for @spec-engine/platform-map.
 
-export { detect } from "./detect.js";
-export { MalformedConfigError, RootNotFoundError } from "./errors.js";
-export { graph } from "./graph.js";
-// serialize/toJSON: deliberate public extension; see README "Determinism".
-export { serialize, toJSON } from "./internal/serialize.js";
-export { map } from "./map.js";
-export { deriveRole } from "./role.js";
-// resolvePlatformContext stays internal; consumers get its behavior via map().
+export { detect } from "./detect.ts";
+export { discover } from "./discover.ts";
+export { DirectoryNotFoundError } from "./errors.ts";
+export { applyInit, planInit } from "./init.ts";
+export { applyLink, planLink } from "./link.ts";
+export { check, locate, map } from "./map.ts";
+export { formatDiagnostics, render, toJSON, toMermaid } from "./render.ts";
 export type {
-  AdapterName,
+  Candidate,
   Detection,
-  DetectOptions,
   Diagnostic,
-  Edge,
-  MapOptions,
-  MemberMarker,
+  DiagnosticCode,
+  InitPlan,
+  LeafMarker,
+  LinkPlan,
+  Locations,
   Mode,
-  PlatformDefinition,
-  PlatformGraph,
-  PlatformLocalConfig,
+  Options,
+  Package,
+  PlatformFile,
   PlatformMap,
-  PlatformMapConfig,
-  Role,
-  Unit,
-  UnitSignals,
-} from "./types.js";
+  Repo,
+  UserConfig,
+  WriteResult,
+} from "./types.ts";

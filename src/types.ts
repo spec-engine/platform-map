@@ -1,223 +1,170 @@
-// Public type contract for @spec-engine/platform-map. These types ARE the
-// API: once 1.0 ships, a change to any shape here is semver-major. Zero
-// imports, zero logic; the shared contract every module and consumer binds to.
+// Public types. These are the API: changing a shape is a breaking change.
 
-// ── Modes ────────────────────────────────────────────────────────────────
-/** Shape of a node in the topology tree. Recursive: a multi-repo
- *  platform's constituent repo can itself be a monorepo. */
-export type Mode = "single-repo" | "multi-repo" | "monorepo";
+export type Mode = "single-repo" | "monorepo" | "multi-repo";
 
-// ── Signals (observed; role derivation reads these) ───────────────────────
-/** Every field optional; absent means "not determined", never "false".
- *  Absence is never a negative assertion. */
-export interface UnitSignals {
-  // package.json-derived
-  private?: boolean; // "private": true
-  hasExports?: boolean; // "exports" or "main" present
-  hasBin?: boolean; // "bin" present (CLI-shaped)
-  hasStartScript?: boolean; // scripts.start present
-  packageName?: string; // "name" field, validated
-
-  // filesystem-derived
-  hasDockerfile?: boolean;
-  hasDeployConfig?: boolean; // vercel.json, fly.toml, serverless.yml, k8s/, .platform/ …
-  languages?: string[]; // coarse: ["ts","js","py"…] from file-extension census (bounded scan)
-  packageManager?: "pnpm" | "yarn" | "npm" | "bun" | null;
-
-  // graph-derived (filled by graph(), not by adapters)
-  workspaceInDegree?: number; // how many sibling units depend on this one
-  workspaceOutDegree?: number; // how many sibling units this one depends on
-
-  // linkage-derived (DF adapter)
-  hasDfPointer?: boolean; // pointer-only df-config.json present
-  dfConfigConflict?: boolean; // non-pointer df-config.json present
-
-  // linkage-derived (SE adapter)
-  hasSpecEngineConfig?: boolean; // spec-engine.member.json present
-}
-
-// ── Role (derived view, not a stored fact) ───────────────────────────────
-export type Role = "library" | "app" | "unknown";
-
-// ── Unit ─────────────────────────────────────────────────────────────────
-export interface Unit {
-  /** Platform-relative path used as identity (e.g. "packages/engine",
-   *  "svc-api/apps/web"). Unique within a PlatformMap. */
-  name: string;
-  /** Relative path from the containing unit's root. May equal name; may
-   *  differ when a canonical config aliases a unit
-   *  ("svc-api" -> "../acme-service-api"). */
-  path: string;
-  kind: "repo" | "workspace-package";
-  /** This unit's own shape. "monorepo" ⇒ units[] is populated. */
-  mode: Mode;
-  /** Resolved default branch (origin/HEAD probe with fallback).
-   *  Only meaningful for kind:"repo"; null when probe failed/not applicable. */
-  ref: string | null;
-  /** Recursive children (workspace packages of a monorepo unit). Empty for leaves. */
-  units: Unit[];
-  signals: UnitSignals;
-  /** Derived from signals via deriveRole(); config overrides win. */
-  role: Role;
-  /** Adapters that contributed to this unit, in precedence order. */
-  sources: string[];
-}
-
-// ── Edges ────────────────────────────────────────────────────────────────
-export interface Edge {
-  from: string; // Unit.name (the dependent)
-  to: string; // Unit.name (the dependency)
-  via: "workspace-dependency"; // v1 has exactly one edge kind; the field
-  // exists so v2 source-import edges are additive
-}
-
-// ── PlatformGraph (pure view over a PlatformMap) ──────────────────────────
-/** The pure query view returned by graph(pm). Operates only on pm.edges +
- *  pm.units; no I/O. All array results are lexically sorted (plain `<`/`>`,
- *  never localeCompare, whose order is environment-dependent). */
-export interface PlatformGraph {
-  /** Dependency graph keyed by dependent (Edge.from). Every workspace-package
-   *  name is a key (empty Set for leaves). */
-  toDepGraph(): Map<string, Set<string>>;
-  /** Transitive dependency-closure of `name`, lexically sorted. */
-  dependenciesOf(name: string): string[];
-  /** Transitive dependent-closure of `name`, lexically sorted. */
-  dependentsOf(name: string): string[];
-  /** Names with in-degree 0 (app-shaped sinks), sorted. */
-  roots(): string[];
-  /** Names with out-degree 0 (foundation libraries), sorted. */
-  leaves(): string[];
-  /** [] when acyclic; else each cycle as lexically-sorted SCC membership. */
-  cycles(): string[][];
-}
-
-// ── Diagnostics (never silently drop anything) ───────────────────────────
-export interface Diagnostic {
-  code:
-    | "UNCONFIGURED_SIBLING" // repo-root without any config
-    | "CONFIG_CONFLICT" // two sources disagree; precedence applied, both reported
-    | "MALFORMED_CONFIG" // JSON/shape error in a source file (file + reason)
-    | "UNMATCHED_PATTERN" // workspace/ignore glob matched nothing (zero-dep glob honesty)
-    | "CYCLE_SUSPECTED" // edges contain a cycle (reported, not thrown; mapping still succeeds)
-    | "UNIT_PATH_ESCAPE" // resolved unit path escapes platform root
-    | "CENSUS_TRUNCATED" // depth/entry-cap hit during file census
-    | "PLATFORM_DRIFT"; // definition/marker/local-override disagreement
-  severity: "info" | "warning" | "error";
-  path?: string; // platform-relative locus
-  message: string; // human-readable, stable prefix per code
-}
-
-// ── The root object ──────────────────────────────────────────────────────
 export interface PlatformMap {
-  name: string; // config name, else basename(root)
-  root: string; // as given to map(); all other paths relative to it
+  /** Platform name from the platform file; otherwise the directory name. */
+  name: string;
   mode: Mode;
-  units: Unit[]; // sorted by name (determinism contract)
-  edges: Edge[]; // sorted by (from, to)
-  diagnostics: Diagnostic[]; // sorted by (severity desc, code, path)
-  /** Schema version of THIS shape, for consumers persisting maps. */
-  schemaVersion: 1;
+  /** False when the map was built from discovery alone (a folder of repos
+   *  with no platform file yet). Such a map is a preview: nothing in it is a
+   *  member until `init` writes the files. */
+  declared: boolean;
+  /** One entry for a single repo or monorepo; one per member for a platform.
+   *  Sorted by name. */
+  repos: Repo[];
+  /** Sorted by severity (error, warning, info), then code, then subject. */
+  diagnostics: Diagnostic[];
+  schemaVersion: 2;
 }
 
-// ── detect() contract ─────────────────────────────────────────────────────
-export interface DetectOptions {
-  /** Sibling scan root, relative to `root`. Default "..". */
-  scanRoot?: string;
-  ignore?: string[];
+export interface Repo {
+  /** Member name from the platform file, or the directory name. */
+  name: string;
+  mode: "single-repo" | "monorepo";
+  /** The "name" field of the repo's package.json, when it has one. */
+  packageName?: string;
+  /** From the lockfile present in the repo, when there is one. */
+  packageManager?: "npm" | "pnpm" | "yarn" | "bun";
+  /** Package names from this platform that the repo's own package.json
+   *  depends on (dependencies, devDependencies, peerDependencies). Sorted. */
+  dependsOn: string[];
+  /** The workspace packages of a monorepo; empty for a single repo. Sorted by path. */
+  packages: Package[];
+  /** Whether the repo was found on this machine. When false, mode is
+   *  "single-repo", packages is empty, and marker is "unknown". */
+  present: boolean;
+  /** State of the leaf marker inside the repo. "unknown" for a lone repo
+   *  that is not part of any platform, or a member that is not on disk. */
+  marker: "ok" | "missing" | "mismatch" | "unknown";
+}
+
+export interface Package {
+  /** Path relative to the repo root, e.g. "packages/ui". */
+  path: string;
+  /** The "name" field of the package's package.json, when it has one. */
+  packageName?: string;
+  /** Package names from this platform that this package depends on. Sorted. */
+  dependsOn: string[];
+}
+
+export type DiagnosticCode =
+  | "MALFORMED_FILE" // a platform-map.json, package.json, manifest, or the user file failed to parse or validate
+  | "MEMBER_MISSING" // listed in the platform file, not found on this machine
+  | "MARKER_MISSING" // member has no platform-map.json marker
+  | "MARKER_MISMATCH" // member's marker names a different platform
+  | "UNLISTED_REPO" // a repository in the platform folder is not a member
+  | "PLATFORM_NOT_LOCATED" // marker names a platform this machine cannot find
+  | "UNDECLARED_PLATFORM" // folder of repos with no platform file; the map is a preview
+  | "UNMATCHED_PATTERN" // a workspace glob matched no package
+  | "SCAN_TRUNCATED"; // a directory walk hit its depth or entry cap
+
+export interface Diagnostic {
+  code: DiagnosticCode;
+  severity: "error" | "warning" | "info";
+  /** What the diagnostic is about: a member name, a package path, or a filename. */
+  subject: string;
+  message: string;
 }
 
 export interface Detection {
   mode: Mode;
-  /** Present when mode === "monorepo": the raw workspace globs found. */
+  /** Present when mode is "monorepo": which manifest declared the packages. */
+  manifest?: "pnpm-workspace" | "yarn-workspaces" | "npm-workspaces" | "lerna";
+  /** Present when mode is "monorepo": the raw globs from that manifest. */
   workspaceGlobs?: string[];
-  /** Which manifest owned the package list. Probe order: pnpm-workspace.yaml
-   *  > yarn workspaces > npm workspaces > lerna.json. */
-  flavor?: "pnpm" | "yarn-workspaces" | "npm-workspaces" | "lerna" | null;
-  /** turbo/nx overlay if present; informational only. */
-  orchestrator?: "turbo" | "nx" | null;
-  /** Present when mode === "multi-repo": candidate sibling repos (facts only;
-   *  candidates are not units until config confirms). */
-  siblings?: Array<{
-    name: string;
-    path: string;
-    ref: string | null;
-    hasDfPointer: boolean;
-    conflict: string | null;
-  }>;
 }
 
-// ── map() contract ────────────────────────────────────────────────────────
-/** The five source adapters, in fixed precedence order. `"caller"` (injected
- *  MapOptions.units) ranks between canonical and dark-factory but has no
- *  adapter function, so it is deliberately excluded from this union. */
-export type AdapterName =
-  | "canonical"
-  | "dark-factory"
-  | "spec-engine"
-  | "workspace"
-  | "siblings";
-
-// ── Platform-root convention ──────────────────────────────────────────────
-/** The checked-in platform definition: the `members`-keyed shape of
- *  `platform-map.json` at a platform root. Identity only; machine paths never
- *  appear here (per-user disk locations live in `platform-map.local.json`). */
-export interface PlatformDefinition {
-  /** Becomes PlatformMap.name regardless of the invocation directory. */
+export interface Candidate {
+  /** Directory name. */
   name: string;
-  /** Explicit membership. `path` is relative to the platform root and
-   *  defaults to `name` (the child-dir convention). */
-  members: Array<{ name: string; path?: string }>;
-  /** Additional ignore globs, threaded into the platform root's child scan. */
+  hasGit: boolean;
+  hasPackageJson: boolean;
+  /** Present when the directory holds a leaf marker: the platform it names. */
+  marker?: string;
+  /** True when a platform file in the folder already lists it. */
+  listed: boolean;
+}
+
+/** Where things are on this machine. Never part of a PlatformMap. */
+export interface Locations {
+  /** Absolute path of the platform repo, or of the lone repo. */
+  root: string;
+  /** Member name -> absolute path. Missing members are absent. */
+  repos: Record<string, string>;
+  /** Which entries came from the user file rather than the convention. */
+  overridden: string[];
+}
+
+export interface InitPlan {
+  /** Absolute path of the directory the platform file lives (or will live) in. */
+  root: string;
+  platformName: string;
+  /** Members already listed in an existing platform file; empty for a new one. */
+  members: string[];
+  /** Every discovered candidate, with whether it is already a member. */
+  candidates: Candidate[];
+  /** Files that would be written if every eligible candidate is included,
+   *  as root-relative path -> content. applyInit recomputes this for the
+   *  confirmed subset. */
+  writes: Record<string, PlatformFile | LeafMarker>;
+  /** Root-relative marker paths that already exist and would be left alone. */
+  skipped: string[];
+  /** Set when nothing can be written (for example a malformed platform file). */
+  problem?: string;
+}
+
+export interface LinkPlan {
+  platformName: string;
+  /** Absolute path of the platform root; null when it could not be located. */
+  root: string | null;
+  /** Member name -> absolute path to record. Empty when the checkout already
+   *  follows the convention. */
+  members: Record<string, string>;
+  /** Absolute path of the user file that would be written. */
+  userFile: string;
+  /** Why nothing can be written, when root is null. */
+  problem?: string;
+}
+
+export interface WriteResult {
+  /** Absolute paths written. */
+  written: string[];
+  /** Absolute paths deliberately not written (already existed). */
+  skipped: string[];
+}
+
+/** The committed platform file: `platform-map.json` at the platform root. */
+export interface PlatformFile {
+  name: string;
+  members: string[];
+  /** Directory names to ignore during discovery. */
   ignore?: string[];
 }
 
-/** The committed per-member marker: the `platform`-keyed shape inside a
- *  member repo. Identity + root hint only; no sibling lists, no machine
- *  paths. */
-export interface MemberMarker {
-  /** The platform this member belongs to. */
+/** The committed leaf marker: `platform-map.json` inside a member. */
+export interface LeafMarker {
   platform: string;
-  /** Relative hint from the member to its platform root. Default "..". */
-  root?: string;
+  /** The member name this repo is listed under. Written by `init`; lets a
+   *  checkout that lives elsewhere identify itself. Defaults to the directory name. */
+  member?: string;
 }
 
-/** The per-user, never-committed `platform-map.local.json`: disk-location
- *  overrides naming where members actually live on THIS machine. Read only
- *  when a definition is present at the resolved root; never reflected in map
- *  output (unit paths stay conventional). */
-export interface PlatformLocalConfig {
-  locations?: Record<string, string>;
-}
+/** The per-user file: platform name -> where it is on this machine. */
+export type UserConfig = Record<
+  string,
+  { root: string; members?: Record<string, string> }
+>;
 
-/** The optional, authoritative unit-level canonical config; config is
- *  optional forever. Unknown top-level keys are ignored (forward-compat);
- *  known-key shapes are validated strictly. */
-export interface PlatformMapConfig {
-  /** Overrides PlatformMap.name (else basename(root)). */
-  name?: string;
-  /** Explicit unit declarations. A non-empty array gates sibling promotion
-   *  ("config disposes"): unconfirmed siblings become UNCONFIGURED_SIBLING. */
-  units?: Array<{ name: string; path: string; ref?: string }>;
-  /** Additional ignore globs, merged with adapter-supplied ignores. */
+/** Options accepted by every command. */
+export interface Options {
+  /** Path of the per-user file. Default: $PLATFORM_MAP_CONFIG, else
+   *  ~/.config/platform-map/platforms.json. */
+  userConfigPath?: string;
+  /** Extra directory names to ignore during discovery. Merged with the
+   *  platform file's `ignore`. node_modules and dot-directories are always ignored. */
   ignore?: string[];
-  /** Per-unit role overrides, applied when deriveRole() runs. */
-  overrides?: Record<string, { role?: Role }>;
-}
-
-/** Options for map(), extending DetectOptions. */
-export interface MapOptions extends DetectOptions {
-  /** Disable a named adapter by setting it to false; omitted/true = enabled. */
-  adapters?: Partial<Record<AdapterName, boolean>>;
-  /** Units injected by the caller; ranked below canonical, above dark-factory. */
-  units?: Array<{ name: string; path: string; ref?: string }>;
-  /** The directory above which upward platform resolution never ascends and
-   *  outside which marker root-hint / local-override resolution is never
-   *  followed. Default: os.homedir(). An escaping resolution becomes a
-   *  diagnostic, never a followed path. */
-  boundary?: string;
-  /** Set to false to skip the git origin/HEAD ref probe; every probed ref
-   *  stays null. The probe is timeout-bounded, so a loaded machine can
-   *  otherwise yield ref:null where a fast one yields a branch name; callers
-   *  needing load-independent output disable it. */
-  refProbe?: false;
+  /** Absolute path of the platform root, for `planLink` when the platform
+   *  is not yet known on this machine. */
+  root?: string;
 }

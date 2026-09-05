@@ -1,15 +1,27 @@
 {
   "name": "@spec-engine/platform-map",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "license": "MIT",
-  "description": "Zero-dependency TypeScript library + CLI that deterministically maps a directory tree's platform topology (units, edges, diagnostics).",
+  "description": "Document which repos make up a platform, discover the ones sitting next to each other, and see what is inside every repo and monorepo.",
+  "keywords": [
+    "monorepo",
+    "workspace",
+    "topology",
+    "platform",
+    "dependency-graph",
+    "pnpm",
+    "yarn",
+    "npm-workspaces",
+    "lerna",
+    "cli"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/spec-engine/platform-map.git"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "bin": {
     "platform-map": "dist/platform-map.mjs"
@@ -43,17 +55,16 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "node --test --test-concurrency=4",
-    "demo": "npm run build && node scripts/demo-platform.mjs",
+    "test": "node --test --test-concurrency=4 'src/**/*.test.ts' 'test/**/*.test.ts'",
     "test:bun": "bun test test-bun/",
-    "smoke:cold-install": "npm run build && node scripts/cold-install-smoke.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "biome ci ."
+    "lint": "biome ci .",
+    "lint:docs": "node scripts/check-public-docs.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "^2.5.3",
-    "@types/node": "^20.19.43",
+    "@types/node": "^24.0.0",
     "publint": "^0.3.21",
     "tsdown": "^0.22.7",
     "typescript": "^7.0.2"

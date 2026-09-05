@@ -9,11 +9,13 @@
     "isolatedModules": true,
     "isolatedDeclarations": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "types": ["node"],
     "declaration": true,
-    "rootDir": ".",
-    "outDir": "dist-typecheck-only"
+    "noEmit": true
   },
-  "include": ["src/**/*.ts", "bin/**/*.ts"]
+  "include": ["src/**/*.ts", "bin/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
 }

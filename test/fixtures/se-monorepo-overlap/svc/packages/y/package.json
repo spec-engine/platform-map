@@ -1,6 +1,0 @@
-{
-  "name": "@svc/y",
-  "dependencies": {
-    "@svc/x": "workspace:*"
-  }
-}
