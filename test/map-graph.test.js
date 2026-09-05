@@ -1,13 +1,13 @@
-// GRAPH-04 (diagnostic half) / GRAPH-05 / MODEL-03 / MODEL-04: map()'s strict-
+// (diagnostic half) / / / map()'s strict-
 // order wiring — buildEdges -> populateDegrees -> CYCLE_SUSPECTED emission ->
 // applyRoles — proven end-to-end. Plain ESM .js importing the built dist/
-// artifacts (D-06); runs unmodified under `node --test` AND `bun test` (D-05).
+// artifacts; runs unmodified under `node --test` AND `bun test`.
 //
 // Authored RED in plan 03-03 Task 1: until map() populates degrees, emits
 // CYCLE_SUSPECTED, and applies roles, these assertions fail (degrees undefined,
 // roles seeded "unknown", no cycle diagnostic).
 //
-// The DESIGN §4 anchor is proven against a SYNTHETIC spec-engine-shaped fixture
+// The documented role anchor is proven against a SYNTHETIC spec-engine-shaped fixture
 // (NOT the live ../spec-engine repo, where webapp derives to library and
 // engine<->webapp is a real 2-cycle — that live-repo divergence is deferred to
 // Phase 5 and flagged for the roadmap owner, not tested here).
@@ -37,7 +37,7 @@ function findUnit(units, name) {
   return undefined;
 }
 
-// ── Synthetic spec-engine anchor: roles + degree population (GRAPH-05/MODEL-03) ─
+// ── Synthetic spec-engine anchor: roles + degree population ─
 
 test("map(synthetic): engine/shared/tracker -> library, webapp -> app", async () => {
   const pm = await map(synthetic);
@@ -75,7 +75,7 @@ test("map(synthetic): degrees populated on every workspace-package (0 included)"
   assert.equal(engine.signals.workspaceOutDegree, 2);
 });
 
-// ── GRAPH-04: cycles surface as CYCLE_SUSPECTED, mirror graph().cycles(), no throw ─
+// ── cycles surface as CYCLE_SUSPECTED, mirror graph().cycles(), no throw ─
 
 test("map(cyclic): one CYCLE_SUSPECTED warning per cycle, mirrors graph().cycles(), never throws", async () => {
   // Materialize a real 2-cycle monorepo in a temp dir: packages/a <-> packages/b.
@@ -98,7 +98,7 @@ test("map(cyclic): one CYCLE_SUSPECTED warning per cycle, mirrors graph().cycles
     mk("a", "@cyc/a", "@cyc/b");
     mk("b", "@cyc/b", "@cyc/a");
 
-    // map() must resolve (never throw) on a cyclic workspace (GRAPH-04 / SEC-01).
+    // map() must resolve (never throw) on a cyclic workspace .
     const pm = await map(dir);
 
     const cycleDiags = pm.diagnostics.filter(
@@ -122,7 +122,7 @@ test("map(cyclic): one CYCLE_SUSPECTED warning per cycle, mirrors graph().cycles
   }
 });
 
-// ── Determinism (DETR-02): degree/role/edge/diagnostic outputs order-independent ─
+// ── Determinism: degree/role/edge/diagnostic outputs order-independent ─
 
 test("toJSON is byte-identical under shuffled unit/edge/diagnostic ordering", () => {
   const pkg = (name, signals, role) => ({

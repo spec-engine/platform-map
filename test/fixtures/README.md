@@ -1,4 +1,4 @@
-# Test fixtures — strategy (D-07)
+# Test fixtures — strategy
 
 `detect()` and its supporting primitives are filesystem-walking functions,
 so their tests are proven against real on-disk fixture trees, not mocked
@@ -18,11 +18,11 @@ so their tests are proven against real on-disk fixture trees, not mocked
   - `monorepo-yarn-ws/package.json` + `yarn.lock` — yarn workspaces.
   - `monorepo-lerna/lerna.json` — lerna's `packages` field.
   - `multi-repo-of-monorepos/sibling-b/pnpm-workspace.yaml` — a sibling that
-    is itself a pnpm monorepo (the DET-02 recursive-composability proof).
+    is itself a pnpm monorepo (the recursive-composability proof).
 
 - **Programmatically materialized fixtures** (`test/detect.test.js` setup):
   anything requiring a real `.git` entry (directory scanning for sibling
-  candidates, DET-04/05) is built at test-run time in a temp directory
+  candidates) is built at test-run time in a temp directory
   (`fs.mkdtempSync` under the OS temp dir), typically seeded by copying one
   of the static fixture trees above (`fs.cpSync(..., { recursive: true })`)
   and then adding the `.git` marker(s) the scenario needs. This keeps the
@@ -40,25 +40,25 @@ walks the tree expecting exactly one repository root. Materializing it at
 test time sidesteps this entirely and keeps the fixture trees themselves
 simple, readable, and diffable.
 
-## What proves what (RED-100)
+## What proves what
 
 Every committed fixture dir and every fixture-creating script, mapped to
 the requirement(s) it proves and the test that executes it:
 
 | Fixture / builder | Proves | Executed by |
 | --- | --- | --- |
-| `single-repo/` | PMAP-011 rung 1 (single-repo detection), CFG-03 map() happy path, CLI stream separation | `detect.test.js`, `map.test.js`, `cli.test.js` |
-| `monorepo-pnpm/` | PMAP-002 pnpm-workspace detection + MALFORMED_CONFIG honesty, CLI-01/02 stdout/stderr split | `detect.test.js`, `cli.test.js` |
+| `single-repo/` | PMAP-011 rung 1 (single-repo detection), map() happy path, CLI stream separation | `detect.test.js`, `map.test.js`, `cli.test.js` |
+| `monorepo-pnpm/` | PMAP-002 pnpm-workspace detection + MALFORMED_CONFIG honesty, stdout/stderr split | `detect.test.js`, `cli.test.js` |
 | `monorepo-npm-ws/`, `monorepo-yarn-ws/`, `monorepo-lerna/` | PMAP-002 detection flavors (npm/yarn/lerna) | `detect.test.js` |
 | `monorepo-turbo/` | PMAP-002 turbo flavor + detect/map parity | `parity.test.js`, `adversarial-e2e.test.js` |
-| `monorepo-edges/` | PMAP-003 workspace-dependency edges, CLI-03 `graph` / `graph --dot` | `edges.test.js`, `cli.test.js` |
-| `multi-repo-of-monorepos/` | DET-02 recursive composability (a sibling that is itself a monorepo) | `detect.test.js`, `mixed-topology.test.js`, `parity.test.js` |
+| `monorepo-edges/` | PMAP-003 workspace-dependency edges, `graph` / `graph --dot` | `edges.test.js`, `cli.test.js` |
+| `multi-repo-of-monorepos/` | recursive composability (a sibling that is itself a monorepo) | `detect.test.js`, `mixed-topology.test.js`, `parity.test.js` |
 | `signals/` | PMAP-004 package.json + fs signal census | `signals.test.js` |
 | `adversarial-glob/` | SEC glob/path-guard hardening | `glob.test.js`, `adversarial-e2e.test.js` |
 | `synthetic-spec-engine/` | deriveRole against a realistic platform shape | `role-parity.test.js`, `map-graph.test.js`, `parity.test.js` |
-| tmpdir builder in `detect.test.js` | DET-04/05 `.git` sibling scanning | `detect.test.js` |
-| tmpdir builder in `platform-convention.test.js` (`buildPlatform`) | PMAP-010 run-anywhere equivalence, PMAP-011 rung 3, PMAP-012 drift, D-02/IP-6 local overrides | `platform-convention.test.js` |
+| tmpdir builder in `detect.test.js` | `.git` sibling scanning | `detect.test.js` |
+| tmpdir builder in `platform-convention.test.js` (`buildPlatform`) | PMAP-010 run-anywhere equivalence, PMAP-011 rung 3, PMAP-012 drift, local overrides | `platform-convention.test.js` |
 | tmpdir builders in `mixed-topology.test.js` / `parity.test.js` | mixed rung composition, detect/map parity | `mixed-topology.test.js`, `parity.test.js` |
-| **`scripts/demo-platform.mjs`** (fixture-CREATING script) | PMAP-002/003/010/011/012, role derivation, UNCONFIGURED_SIBLING honesty, local override, CLI-04 `init` — live, annotated, human-readable | `test/demo.test.js` (rot-proof) |
+| **`scripts/demo-platform.mjs`** (fixture-CREATING script) | PMAP-002/003/010/011/012, role derivation, UNCONFIGURED_SIBLING honesty, local override, `init` (live, annotated, human-readable) | `test/demo.test.js` (rot-proof) |
 
 Humans: run `npm run demo` to watch every shape mapped live.

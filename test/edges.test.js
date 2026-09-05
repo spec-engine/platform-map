@@ -1,12 +1,12 @@
-// GRAPH-01: workspace dependency edges. Proves the load-bearing packageName ->
+// workspace dependency edges. Proves the load-bearing packageName ->
 // Unit.name (path) translation seam: package.json deps reference package NAMES,
 // Unit.name is the platform-relative PATH, so buildEdges must translate via a
 // per-sibling-set index. Also proves 4-field dep intersection, external-dep
 // filtering, no-self-edge, per-sibling-set scoping (no cross-monorepo edges),
 // populateDegrees (0 included), and toJSON shuffle-determinism.
 //
-// Plain ESM .js importing the built dist/ artifacts (D-06) — runs unmodified
-// under `node --test` AND `bun test` (D-05). Determinism assertions route
+// Plain ESM .js importing the built dist/ artifacts — runs unmodified
+// under `node --test` AND `bun test`. Determinism assertions route
 // through toJSON (serialize.ts is the SOLE sort site; edges.ts never sorts).
 
 import assert from "node:assert/strict";
@@ -213,7 +213,7 @@ test("map() populates pm.edges with workspace edges (from/to as PATHs, external 
   }
 });
 
-// ── Determinism (DETR-02): toJSON byte-identical under shuffled units/edges ──
+// ── Determinism: toJSON byte-identical under shuffled units/edges ──
 
 test("toJSON is byte-identical regardless of unit/edge input ordering", () => {
   const lib = pkg("packages/lib", "@scope/lib");

@@ -1,7 +1,7 @@
-// CLI-01/02/05/06 (white-box): the pure cli-render helpers over the BUILT
+// (white-box): the pure cli-render helpers over the BUILT
 // dist/internal/cli-render.mjs — parseArgs grammar, deterministic renderTree
 // string, and the exitFor exit-2 gate. Plain ESM .js importing the already-built
-// dist/ (D-06); runs unmodified under `node --test` and `bun test` (D-05).
+// dist/; runs unmodified under `node --test` and `bun test`.
 //
 // exit-2 is exercised HERE, white-box, on a synthetic PlatformMap carrying a
 // hand-built severity:"error" diagnostic — no real directory tree produces one
@@ -64,7 +64,7 @@ function monoWithChild(name, childName) {
   };
 }
 
-// ── parseArgs grammar table (CLI-06) ────────────────────────────────────────
+// ── parseArgs grammar table ────────────────────────────────────────
 
 test("parseArgs([]) → command map, dir '.', all flags false", () => {
   const a = parseArgs([]);
@@ -104,7 +104,7 @@ test("parseArgs does not crash on later-slice tokens (detect/graph/init/--dot/--
   assert.doesNotThrow(() => parseArgs(["init", "--yes"]));
 });
 
-// ── WR-02: `--` end-of-options separator + dash-prefixed dirs ────────────────
+// ── `--` end-of-options separator + dash-prefixed dirs ────────────────
 
 test("parseArgs(['--']) → no error, dir stays default (bare separator consumed)", () => {
   const a = parseArgs(["--"]);
@@ -145,7 +145,7 @@ test("parseArgs(['--','--json']) → --json after -- is a positional (dir), not 
   assert.equal(a.error, undefined);
 });
 
-// ── CLI-07 (WR-03): claiming ends at -- and at the dir positional ───────────
+// ── claiming ends at -- and at the dir positional ───────────
 
 test("parseArgs(['--','detect']) → command map, dir 'detect' (no claim after --)", () => {
   const a = parseArgs(["--", "detect"]);
@@ -196,7 +196,7 @@ test("parseArgs(['detect','detect']) → command detect, dir 'detect'", () => {
   assert.equal(a.error, undefined);
 });
 
-// ── renderTree (CLI-01): shape, box-drawing, determinism, no absolute path ──
+// ── renderTree: shape, box-drawing, determinism, no absolute path ──
 
 test("renderTree emits header + box-drawing tree with nested continuation", () => {
   const out = renderTree(
@@ -238,7 +238,7 @@ test("renderTree is deterministic regardless of input units[] order", () => {
   assert.equal(shuffled, ordered);
 });
 
-// ── exitFor (CLI-05): the exit-2 gate on a synthetic error-severity map ─────
+// ── exitFor: the exit-2 gate on a synthetic error-severity map ─────
 
 test("exitFor → 2 when any diagnostic is severity 'error'", () => {
   const pm = buildMap([]);
@@ -270,7 +270,7 @@ test("toJSON of a synthetic map parses with schemaVersion 1", () => {
   assert.equal(parsed.schemaVersion, 1);
 });
 
-// ── toDot (CLI-03): Graphviz digraph from the serialize()-sorted edge set ────
+// ── toDot: Graphviz digraph from the serialize()-sorted edge set ────
 // A synthetic multi-repo map whose units are workspace-packages a/b/c with two
 // edges given OUT of (from,to) order, so the DOT proves it renders in the
 // serialize() order (a->c before b->a), not the input order.
@@ -327,9 +327,9 @@ test("toDot on a zero-edge map yields an empty-bodied digraph", () => {
   assert.equal(out, "digraph platform {\n}");
 });
 
-// ── graphProjection (CLI-03, Open Q1): fully-serializable {nodes,edges,roots,leaves,cycles}
+// ── graphProjection: fully-serializable {nodes,edges,roots,leaves,cycles}
 
-test("graphProjection returns the {nodes,edges,roots,leaves,cycles} shape reusing graph()", () => {
+test("graphProjection returns the {nodes,edges,roots,leaves,cycles} shape reusing graph", () => {
   const pm = buildEdgeMap(EDGE_UNITS, EDGES);
   const proj = graphProjection(pm);
   assert.deepEqual(Object.keys(proj).sort(), [
@@ -373,7 +373,7 @@ test("graphProjection is byte-stable across shuffled input of the same logical m
   assert.equal(shuffled, ordered);
 });
 
-// ── buildProposal (CLI-04, Open Q2): the pure proposal shape from Detection ──
+// ── buildProposal: the pure proposal shape from Detection ──
 // White-box over synthetic Detection literals — no fixture/I/O. Single-repo and
 // monorepo emit `{ name }` only (the workspace adapter re-discovers members);
 // multi-repo carries units[] from siblings (name/path/ref only, ref omitted-when-null).
@@ -453,7 +453,7 @@ test("buildProposal output is fully JSON-serializable (round-trips through JSON)
   assert.deepEqual(JSON.parse(JSON.stringify(p)), p);
 });
 
-// ── parseYesNo (CLI-04): /^y(es)?$/i.test(trim); everything else false ──────
+// ── parseYesNo: /^y(es)?$/i.test(trim); everything else false ──────
 
 test("parseYesNo: y/Y/yes/YES/' y ' → true; ''/n/no/x → false", () => {
   for (const yes of ["y", "Y", "yes", "YES", " y "]) {

@@ -1,6 +1,6 @@
-// SEC-03: validatePackageName — the pure package-name guard. Plain ESM .js
-// importing the already-built dist/internal/package-name.mjs (D-06) — runs
-// unmodified under `node --test` and `bun test` (D-05).
+// validatePackageName — the pure package-name guard. Plain ESM .js
+// importing the already-built dist/internal/package-name.mjs — runs
+// unmodified under `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

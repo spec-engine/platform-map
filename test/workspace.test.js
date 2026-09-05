@@ -1,6 +1,6 @@
-// CFG-06/SEC-02: workspaceAdapter — the workspace-package enumerator. Plain
-// ESM .js importing the already-built dist/adapters/workspace.mjs (D-06). The
-// glob-expansion, UNMATCHED_PATTERN, and SEC-02-drop branches are exercised via
+// workspaceAdapter — the workspace-package enumerator. Plain
+// ESM .js importing the already-built dist/adapters/workspace.mjs. The
+// glob-expansion, UNMATCHED_PATTERN, and-drop branches are exercised via
 // the adapter's TEST-ONLY injectable `deps` seam (mirrors the walk/scan readdir
 // seams); one real-fs case runs against the committed monorepo-pnpm fixture.
 
@@ -84,7 +84,7 @@ test("workspaceAdapter surfaces UNMATCHED_PATTERN for a glob matching nothing", 
   assert.equal(unmatched[0].path, "apps/*");
 });
 
-test("workspaceAdapter drops a candidate escaping root with UNIT_PATH_ESCAPE (SEC-02)", () => {
+test("workspaceAdapter drops a candidate escaping root with UNIT_PATH_ESCAPE", () => {
   const result = workspaceAdapter("/root", ctx("monorepo", ["**"]), {
     walk: () => ({ entries: ["../escape", "packages/ok"], diagnostics: [] }),
     hasPackageJson: () => true,

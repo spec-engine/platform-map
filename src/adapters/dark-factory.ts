@@ -1,6 +1,6 @@
 // The dark-factory adapter: reads <root>/.factory/df-config.json and reports
-// linkage facts only; it never resolves the DF pointer, never reads DF
-// contracts/waves, and never turns `dependsOn[]` into edges. Classification:
+// linkage facts only; it never follows the pointer, never reads anything else
+// under `.factory/`, and never turns `dependsOn[]` into edges. Classification:
 // pointer-only (exactly `{ platform: { factoryDir: string } }`) -> a root unit
 // carrying `hasDfPointer: true`, no repo units; a full config's
 // `platform.repos[]` -> one kind:"repo" unit per entry; any other present
@@ -74,7 +74,7 @@ export function darkFactoryAdapter(
   try {
     text = fs.readFileSync(configPath, "utf8");
   } catch {
-    // Absent (or unreadable) df-config.json is fine; DF platforms are optional.
+    // Absent (or unreadable) df-config.json is fine; the file is optional.
     return { partialUnits: [], edges: [], diagnostics: [] };
   }
 

@@ -1,5 +1,5 @@
-// SEC-02: path-traversal guard. Plain ESM .js importing the already-built
-// dist/ (D-06) — runs unmodified under `node --test` and `bun test` (D-05).
+// path-traversal guard. Plain ESM .js importing the already-built
+// dist/ — runs unmodified under `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -115,7 +115,7 @@ async function runPlatformInit(
   for (const f of plan) process.stderr.write(`  ${f.path}\n`);
   const gate = await confirmWrite(
     yes,
-    `Write ${plan.length} file${plan.length === 1 ? "" : "s"}? [y/N] `,
+    `Write ${plan.length} file${plan.length === 1 ? "" : "s"}? [y/N]`,
   );
   if (gate !== null) return gate;
   for (const f of plan) {
@@ -146,7 +146,7 @@ async function runPlatformInit(
   return 0;
 }
 
-// SEC-05: init is the package's only write path, gated before any write by
+// init is the package's only write path, gated before any write by
 // refuse-if-exists (never clobber an authored file), non-TTY without --yes,
 // and a typed `N`. Proposal to stdout; prompt and status lines to stderr.
 async function runInit(dir: string, yes: boolean): Promise<number> {
@@ -246,7 +246,7 @@ async function main(): Promise<number> {
 }
 
 // Set process.exitCode instead of calling process.exit(): with stdout piped
-// (`platform-map --json | jq`, or DF/SE spawning it) process.exit() would
+// (`platform-map --json | jq`, or a parent process spawning it) process.exit() would
 // truncate JSON beyond the ~64KB pipe buffer while still exiting 0; exitCode
 // lets the event loop drain both streams first. The rejection handler is the
 // last-resort net for main()'s re-thrown unexpected errors: one message-only

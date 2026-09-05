@@ -1,4 +1,4 @@
-// [CFG-08] merge(): the pure precedence fold where adapter disagreements
+// merge(): the pure precedence fold where adapter disagreements
 // become visible. Input is precedence-ordered, HIGH first; the first writer of
 // a field wins. A later source with a DIFFERENT value for an already-set field
 // surfaces one CONFIG_CONFLICT naming both contributors and both values (the

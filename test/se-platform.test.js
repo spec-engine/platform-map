@@ -1,14 +1,14 @@
-// RED-108 (PMAP-014 e2e): SE-platform discovery mode. map(platformDir) on a
+// PMAP-014 e2e: spec-engine platform discovery mode. map(platformDir) on a
 // directory carrying a canonical `spec-engine/` dir — and no platform-map.json
 // — classifies the platform's CHILDREN with Spec Engine's classifySibling
-// three-bucket contract: config-carrying child -> member unit (expanded via
+// per-child classification: config-carrying child -> member unit (expanded via
 // its members glob), unconfigured repo-root child (.git dir-or-file OR
-// package.json, RUNG1-02 parity) -> UNCONFIGURED_SIBLING, plain folder ->
+// package.json) -> UNCONFIGURED_SIBLING, plain folder ->
 // silent. A platform-map.json definition always wins over the convention.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified
-// under `node --test` (D-05). NEVER src/, NEVER .ts. Boundary = the mkdtemp
-// parent (IP-4: tmpdir fixtures live outside os.homedir(), so the boundary
+// Plain ESM .js importing the already-built dist/ — runs unmodified
+// under `node --test`. NEVER src/, NEVER .ts. Boundary = the mkdtemp
+// parent (tmpdir fixtures live outside os.homedir(), so the boundary
 // must be injected for the resolution path to be inert-but-exercised).
 
 import assert from "node:assert/strict";
@@ -43,7 +43,7 @@ function writeMember(dir, config) {
   );
 }
 
-/** The RED-108 fixture: SE's fixtures/platform-fixture shape (bare
+/** The PMAP-014 fixture: Spec Engine's fixtures/platform-fixture shape (bare
  *  config-carrying members), plus one expanding member, one config+.git
  *  member, both unconfigured repo-root shapes, and a plain folder. */
 function buildSePlatform(parent) {
@@ -54,13 +54,13 @@ function buildSePlatform(parent) {
     requirements: [],
   });
 
-  // SE fixture shape: members by config presence alone — no .git, no
-  // package.json (RUNG1-02's second half: config confirms membership).
+  // Spec Engine fixture shape: members by config presence alone — no .git, no
+  // package.json (config confirms membership).
   writeMember(path.join(plat, "admin"), { specs: "spec-engine@2" });
   writeMember(path.join(plat, "api"), { specs: "spec-engine@2" });
   writeMember(path.join(plat, "mobile"), { specs: "spec-engine@1" });
 
-  // Expanding member: the ignore array must NOT filter expansion (AC4).
+  // Expanding member: the ignore array must NOT filter expansion.
   writeMember(path.join(plat, "expandable"), {
     specs: "spec-engine@2",
     members: "packages/*",
@@ -82,21 +82,21 @@ function buildSePlatform(parent) {
   fs.mkdirSync(path.join(plat, "rogue-pkg"));
   writeJson(path.join(plat, "rogue-pkg", "package.json"), {
     name: "rogue-pkg",
-  }); // unconfigured package.json-only child (the widened RUNG1-02 signal)
+  }); // unconfigured package.json-only child (the widened signal)
 
   fs.mkdirSync(path.join(plat, "docs")); // plain folder -> silent (bucket 3)
   fs.mkdirSync(path.join(plat, ".cache")); // dotdir -> invisible
   return plat;
 }
 
-test("SE-platform mode classifies children with the three-bucket contract (RED-108 AC1/AC2/AC3)", async () => {
+test("spec-engine platform mode classifies children with the per-child classification (PMAP-014)", async () => {
   const parent = mktree();
   try {
     const plat = buildSePlatform(parent);
     const pm = await map(plat, { boundary: parent });
 
     assert.equal(pm.mode, "multi-repo");
-    assert.equal(pm.name, "plat"); // basename — SE has no platform-name concept
+    assert.equal(pm.name, "plat"); // basename — Spec Engine has no platform-name concept
 
     assert.deepEqual(
       pm.units.map((u) => u.name),
@@ -114,7 +114,7 @@ test("SE-platform mode classifies children with the three-bucket contract (RED-1
       assert.equal(u.signals.hasSpecEngineConfig, true, u.name);
       assert.ok(u.sources.includes("spec-engine"), u.name);
     }
-    // AC4: packages/cli is a unit DESPITE the parent config's ignore glob.
+    // packages/cli is a unit DESPITE the parent config's ignore glob.
     assert.ok(pm.units.some((u) => u.path === "expandable/packages/cli"));
 
     // Kind rule: bare config members are workspace-packages (never
@@ -125,8 +125,8 @@ test("SE-platform mode classifies children with the three-bucket contract (RED-1
     );
     assert.equal(pm.units.find((u) => u.name === "confgit").kind, "repo");
 
-    // AC3: both unconfigured repo-root shapes -> UNCONFIGURED_SIBLING (SE's
-    // NO_SPEC_CONFIG bucket), and neither becomes a unit.
+    // both unconfigured repo-root shapes -> UNCONFIGURED_SIBLING (Spec Engine's
+    // unconfigured-sibling case), and neither becomes a unit.
     const unconfigured = pm.diagnostics
       .filter((d) => d.code === "UNCONFIGURED_SIBLING")
       .map((d) => d.path);
@@ -155,10 +155,10 @@ test("SE-platform mode classifies children with the three-bucket contract (RED-1
   }
 });
 
-// IDENT-03 (CR-01): an SE member that is ALSO a pnpm monorepo. The flat SE
+// an Spec Engine member that is ALSO a pnpm monorepo. The flat Spec Engine
 // sub-members own the identities; the nested workspace expansion agrees on
 // both identity and location, so it is deduped silently, never doubled.
-test("an SE member that is also a workspace monorepo maps to one unit per package (IDENT-03)", async () => {
+test("an Spec Engine member that is also a workspace monorepo maps to one unit per package", async () => {
   const plat = path.join(here, "fixtures", "se-monorepo-overlap");
   const pm = await map(plat, {
     adapters: { siblings: false },
@@ -199,7 +199,7 @@ test("an SE member that is also a workspace monorepo maps to one unit per packag
   assert.equal(new Set(names).size, names.length);
 });
 
-test("a platform-map.json definition wins over the spec-engine/ convention (RED-108 precedence)", async () => {
+test("a platform-map.json definition wins over the spec-engine/ convention (PMAP-014 precedence)", async () => {
   const parent = mktree();
   try {
     const plat = path.join(parent, "plat");
@@ -217,7 +217,7 @@ test("a platform-map.json definition wins over the spec-engine/ convention (RED-
 
     const pm = await map(plat, { boundary: parent });
 
-    // Definition semantics exactly: declared members only — no per-child SE
+    // Definition semantics exactly: declared members only — no per-child Spec Engine
     // classification (api never becomes a unit), definition name wins.
     assert.equal(pm.name, "declared");
     assert.deepEqual(
@@ -230,7 +230,7 @@ test("a platform-map.json definition wins over the spec-engine/ convention (RED-
   }
 });
 
-test("a unit-config platform-map.json also suppresses the spec-engine/ convention (RED-108 precedence)", async () => {
+test("a unit-config platform-map.json also suppresses the spec-engine/ convention (PMAP-014 precedence)", async () => {
   const parent = mktree();
   try {
     const plat = path.join(parent, "plat");
@@ -256,7 +256,7 @@ test("a unit-config platform-map.json also suppresses the spec-engine/ conventio
   }
 });
 
-test("disabling the spec-engine adapter disables SE-platform mode entirely (RED-108, CFG-09)", async () => {
+test("disabling the spec-engine adapter disables spec-engine platform mode entirely (PMAP-014)", async () => {
   const parent = mktree();
   try {
     const plat = buildSePlatform(parent);
@@ -275,7 +275,7 @@ test("disabling the spec-engine adapter disables SE-platform mode entirely (RED-
   }
 });
 
-test("a malformed child member config degrades to a re-anchored MALFORMED_CONFIG and never gates as a sibling (RED-108, SEC-01)", async () => {
+test("a malformed child member config degrades to a re-anchored MALFORMED_CONFIG and never gates as a sibling (PMAP-014)", async () => {
   const parent = mktree();
   try {
     const plat = path.join(parent, "plat");

@@ -1,8 +1,8 @@
-// D-07 / RED-97 (black-box): `init` platform bootstrap — spawn the BUILT
+// Platform bootstrap (black-box): `init` platform bootstrap — spawn the BUILT
 // dist/platform-map.mjs as a real subprocess against tmpdir trees and assert
 // the platform-init plan (definition + per-member markers), the confirm gates,
 // per-file refuse-if-exists, and the map() round-trip. Plain ESM .js over
-// dist/ (D-06); runs under `node --test` and `bun test` (D-05).
+// dist/; runs under `node --test` and `bun test`.
 //
 // Typed-N decline is gated by parseYesNo behind a real TTY prompt — spawnSync
 // gives the child no controlling TTY, so that branch is unreachable black-box
@@ -11,7 +11,7 @@
 //
 // The round-trip case sets env HOME on the spawned CLI to the tmp PARENT:
 // map() has no CLI boundary flag, and os.homedir() honors HOME on POSIX, so
-// the boundary contains the fixture (IP-4).
+// the boundary contains the fixture.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -79,9 +79,9 @@ test("buildPlatformInit: definition first, one marker per member, member path om
   assert.equal(
     plan[0].content.members[0].path,
     undefined,
-    "path omitted when it equals the member name (IP-1 child-dir convention)",
+    "path omitted when it equals the member name (child-dir convention)",
   );
-  // Markers: platform name + explicit root ".." (D-03), keyed by member path.
+  // Markers: platform name + explicit root "..", keyed by member path.
   assert.deepEqual(plan[1], {
     path: "svc-a/platform-map.json",
     content: { platform: "myplat", root: ".." },
@@ -208,7 +208,7 @@ test("after init --yes, `--json` at the root (HOME=tmp parent) yields the platfo
   }
 });
 
-// ── D-07 gate: root file exists → whole init refuses ─────────────────────────
+// ── gate: root file exists → whole init refuses ─────────────────────────
 
 test("root platform-map.json exists: whole init refuses (exit 1), no marker written, root file unchanged", () => {
   const { tmpParent, root } = seedPlatform();
@@ -237,7 +237,7 @@ test("root platform-map.json exists: whole init refuses (exit 1), no marker writ
   }
 });
 
-// ── D-07 gate: member file exists → skip that file, write the rest ───────────
+// ── gate: member file exists → skip that file, write the rest ───────────
 
 test("a member's platform-map.json exists: excluded from the plan with a stderr note, remaining files still written, existing file unchanged", () => {
   const { tmpParent, root } = seedPlatform();
@@ -338,7 +338,7 @@ test("init --yes at a childless repo with parent .git siblings: today's { name, 
   }
 });
 
-// ── WR-05: symlinked member child dirs are never written through ────────────
+// ── symlinked member child dirs are never written through ────────────
 
 test("init --yes skips a symlinked member child with a note (never writes through the link)", (t) => {
   const { tmpParent, root } = seedPlatform(["svc-a"]);

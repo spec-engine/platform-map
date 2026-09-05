@@ -1,9 +1,8 @@
-// Adversarial ReDoS corpus for matchGlob (PRIM-01/02, D-12, 01-RESEARCH.md
-// Pitfall 4). None of these are expected to be "realistic" workspace
+// Adversarial ReDoS corpus for matchGlob (ReDoS pitfall). None of these are expected to be "realistic" workspace
 // manifests — they exist purely to prove the segment-based matcher's
 // worst-case cost stays polynomial (never catastrophic/exponential), since
 // this library maps arbitrary caller-supplied, potentially-untrusted
-// directory trees and their config files (DESIGN.md §6, T-03-REDOS).
+// directory trees and their config files (untrusted input).
 
 // 1. Deeply nested `**/**/**/...` — the exact shape a naive
 //    `**` → `(.*)+`-style regex compilation would blow up on.

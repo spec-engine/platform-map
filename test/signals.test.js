@@ -1,7 +1,7 @@
-// MODEL-02/SEC-03: censusSignals — the map-owned per-unit filesystem +
+// censusSignals — the map-owned per-unit filesystem +
 // package.json census. Plain ESM .js importing the already-built
-// dist/signals.mjs (D-06) — runs unmodified under `node --test` and
-// `bun test` (D-05). Asserted against committed static fixtures under
+// dist/signals.mjs — runs unmodified under `node --test` and
+// `bun test`. Asserted against committed static fixtures under
 // test/fixtures/signals (no .git needed).
 
 import assert from "node:assert/strict";
@@ -29,7 +29,7 @@ test("censusSignals reads the full package.json + fs fact set", () => {
   assert.deepEqual([...signals.languages].sort(), ["js", "ts"]);
 });
 
-test("censusSignals omits absent facts entirely (never false) — MODEL-02", () => {
+test("censusSignals omits absent facts entirely (never false) —", () => {
   const { signals } = censusSignals(path.join(signalsDir, "plain"));
   // package.json has no name/private/exports/bin/start; only a .go file.
   assert.equal(Object.hasOwn(signals, "private"), false);
@@ -59,7 +59,7 @@ test("an explicit private:false is recorded as a fact and defeats role rule 3", 
   }
 });
 
-test("censusSignals drops an invalid package name but keeps every other signal (SEC-03)", () => {
+test("censusSignals drops an invalid package name but keeps every other signal", () => {
   const { signals, diagnostics } = censusSignals(
     path.join(signalsDir, "bad-name"),
   );
@@ -70,11 +70,11 @@ test("censusSignals drops an invalid package name but keeps every other signal (
   assert.match(malformed[0].message, /invalid package name dropped: Has Space/);
 });
 
-// WR-01: the invalid-package-name diagnostic must carry the unit's
+// the invalid-package-name diagnostic must carry the unit's
 // platform-relative locus so the failure reports WHICH unit produced it and
 // serialize.ts's (severity,code,path) tie-break stays total across multiple
 // invalid-name diagnostics.
-test("censusSignals stamps the provided locus onto an invalid-name diagnostic (WR-01)", () => {
+test("censusSignals stamps the provided locus onto an invalid-name diagnostic", () => {
   const { diagnostics } = censusSignals(
     path.join(signalsDir, "bad-name"),
     "packages/bad-name",

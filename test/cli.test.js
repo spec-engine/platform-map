@@ -1,7 +1,7 @@
-// CLI-01/02/05 (black-box): spawn the BUILT dist/platform-map.mjs as a real
+// (black-box): spawn the BUILT dist/platform-map.mjs as a real
 // subprocess and assert its stdout/stderr split and exit codes. A genuinely new
 // test shape for this repo (no other test invokes the built CLI). Plain ESM .js
-// over dist/ (D-06); runs under `node --test` and `bun test` (D-05).
+// over dist/; runs under `node --test` and `bun test`.
 //
 // SC2 stream-separation is proven POSITIVELY on a DIAGNOSTIC-PRODUCING fixture
 // (monorepo-pnpm emits MALFORMED_CONFIG): stderr CONTAINS the code, stdout does
@@ -35,7 +35,7 @@ function run(args, opts = {}) {
   });
 }
 
-// ── CLI-01: human tree → stdout, diagnostics → stderr, nothing leaks ────────
+// ── human tree → stdout, diagnostics → stderr, nothing leaks ────────
 
 test("default human mode: clean fixture → tree on stdout, exit 0", () => {
   const r = run([SINGLE_REPO]);
@@ -62,9 +62,9 @@ test("default human mode: diagnostic-producing fixture separates streams (SC2)",
   assert.match(r.stdout, /monorepo-pnpm \(monorepo\)/, "tree header on stdout");
 });
 
-// ── RED-108: SE-platform fixture maps through the CLI ───────────────────────
+// ── PMAP-014: spec-engine platform fixture maps through the CLI ───────────────────────
 
-test("--json on an SE-platform fixture emits member units, exit 0 (RED-108)", () => {
+test("--json on a spec-engine platform fixture emits member units, exit 0 (PMAP-014)", () => {
   const r = run(["--json", path.join(fixturesDir, "se-platform")]);
   assert.equal(r.status, 0);
   const parsed = JSON.parse(r.stdout);
@@ -76,7 +76,7 @@ test("--json on an SE-platform fixture emits member units, exit 0 (RED-108)", ()
   assert.ok(!names.includes("docs"));
 });
 
-// ── CLI-02: --json → toJSON on stdout, NOTHING on stderr ────────────────────
+// ── --json → toJSON on stdout, NOTHING on stderr ────────────────────
 
 test("--json: parses as JSON with schemaVersion 1, stderr empty (SC2 hard)", () => {
   const r = run(["--json", MONOREPO_PNPM]);
@@ -89,7 +89,7 @@ test("--json: parses as JSON with schemaVersion 1, stderr empty (SC2 hard)", () 
   assert.equal(r.stderr, "", "SC2: --json writes nothing to stderr");
 });
 
-// ── CR-01: piped stdout must not truncate — full --json JSON round-trips ─────
+// ── piped stdout must not truncate — full --json JSON round-trips ─────
 // spawnSync pipes stdout (not a TTY), the exact async+buffered mode where a
 // premature process.exit() would discard the buffered tail past the ~64KB pipe
 // buffer. Assert the captured stdout parses as COMPLETE JSON with the expected
@@ -126,11 +126,11 @@ test("--json piped stdout is complete valid JSON (no process.exit truncation)", 
   );
 });
 
-// ── WR-01: last-resort net for truly unexpected errors ──────────────────────
+// ── last-resort net for truly unexpected errors ──────────────────────
 // The library only throws RootNotFoundError/MalformedConfigError (both mapped to
 // a clean exit 1 inside main()); every other error re-throws and, without a
 // rejection handler, would become a runtime-dependent unhandled rejection (Node
-// vs Bun, both required per D5). Deterministic trigger: `init --yes` targeting a
+// vs Bun, both required). Deterministic trigger: `init --yes` targeting a
 // FILE path — the single writeFileSync then throws ENOTDIR (an unmapped error).
 // The top-level .catch must map it to exit 1 with ONE clean "internal error:"
 // line on stderr and NO raw stack-trace frames.
@@ -160,7 +160,7 @@ test("unexpected error (ENOTDIR via init on a file) → exit 1, clean one-line s
   }
 });
 
-// ── CLI-05: exit codes 0/1 (0 covered above; 2 is white-box in cli-render) ──
+// ── exit codes 0/1 (0 covered above; 2 is white-box in cli-render) ──
 
 test("nonexistent root → exit 1, 'root not found' on stderr, empty stdout", () => {
   const r = run([path.join(fixturesDir, "does-not-exist")]);
@@ -197,7 +197,7 @@ test("--help → exit 0, non-empty, names the init subcommand", () => {
   assert.match(r.stdout, /init/);
 });
 
-// ── CLI-03: `detect` → detect() JSON on stdout, 0-or-throw, no diagnostics ───
+// ── `detect` → detect() JSON on stdout, 0-or-throw, no diagnostics ───
 
 test("detect: monorepo fixture → JSON with a mode field on stdout, empty stderr, exit 0", () => {
   const r = run(["detect", MONOREPO_PNPM]);
@@ -219,7 +219,7 @@ test("detect: nonexistent root → exit 1, 'root not found' on stderr", () => {
   assert.match(r.stderr, /root not found/);
 });
 
-// ── CLI-03: `graph` → {nodes,edges,roots,leaves,cycles} projection on stdout ─
+// ── `graph` → {nodes,edges,roots,leaves,cycles} projection on stdout ─
 
 test("graph: edges fixture → projection JSON with the five keys, non-empty edges", () => {
   const r = run(["graph", MONOREPO_EDGES]);
@@ -237,7 +237,7 @@ test("graph: edges fixture → projection JSON with the five keys, non-empty edg
   );
 });
 
-// ── CLI-03: `graph --dot` → minimal Graphviz DOT on stdout (not JSON) ────────
+// ── `graph --dot` → minimal Graphviz DOT on stdout (not JSON) ────────
 
 test("graph --dot: edges fixture → DOT digraph on stdout, not JSON", () => {
   const r = run(["graph", "--dot", MONOREPO_EDGES]);
@@ -247,7 +247,7 @@ test("graph --dot: edges fixture → DOT digraph on stdout, not JSON", () => {
   assert.throws(() => JSON.parse(r.stdout), "DOT is not JSON");
 });
 
-// ── CLI-04: `init` — the single writer, round-trip + all three refuse gates ──
+// ── `init` — the single writer, round-trip + all three refuse gates ──
 // Seed a clean single-repo into a temp dir (never mutate the committed fixture),
 // then exercise the write, the round-trip through map(), and the refuse gates.
 
@@ -257,7 +257,7 @@ function seedSingleRepo() {
   return tmp;
 }
 
-test("init --yes: writes platform-map.json, exit 0, and the file round-trips through map()", async () => {
+test("init --yes: writes platform-map.json, exit 0, and the file round-trips through map", async () => {
   const tmp = seedSingleRepo();
   try {
     const r = run(["init", "--yes", tmp]);
@@ -296,7 +296,7 @@ test("init --yes on an already-written dir: exit 1, refuses to clobber, file unc
   }
 });
 
-// ── CLI-07 (WR-03): POSIX -- reaches a dir named like a subcommand; a
+// ── POSIX -- reaches a dir named like a subcommand; a
 // subcommand token after the dir is a usage error, never a command reorder ──
 
 test("--json -- detect: maps the child dir literally named detect (map shape, not detect())", () => {

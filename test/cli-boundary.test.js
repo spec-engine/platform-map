@@ -1,7 +1,7 @@
-// WR-03 (black-box): the --boundary CLI flag threads to MapOptions.boundary,
+// (black-box): the --boundary CLI flag threads to MapOptions.boundary,
 // giving containers/CI rung-3 resolution without faking HOME. Spawns the
-// BUILT dist/platform-map.mjs against tmpdir trees (D-06); plain ESM .js
-// under `node --test` (D-05).
+// BUILT dist/platform-map.mjs against tmpdir trees; plain ESM .js
+// under `node --test`.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

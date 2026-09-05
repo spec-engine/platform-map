@@ -1,7 +1,7 @@
-// SEC-04: bounded subprocess exec (spawn + timer + SIGTERM). Plain ESM .js
-// importing the already-built dist/ (D-06) — runs unmodified under
-// `node --test` and `bun test` (D-05). NOT called by detect() this phase
-// (DET-05) — these are standalone unit tests of the primitive itself.
+// bounded subprocess exec (spawn + timer + SIGTERM). Plain ESM .js
+// importing the already-built dist/ — runs unmodified under
+// `node --test` and `bun test`. NOT called by detect() this phase
+// — these are standalone unit tests of the primitive itself.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -54,7 +54,7 @@ test("a real fast command resolves { ok:true, stdout } (degrades gracefully if g
   }
 });
 
-test("stdout is capped so a hostile/misbehaving child can't grow it unbounded (WR-03)", async () => {
+test("stdout is capped so a hostile/misbehaving child can't grow it unbounded", async () => {
   // Writes far more than the 64KB cap, well within the timeout window, then
   // exits cleanly — proves the cap applies to a live, still-running child
   // (not just a truncation-on-timeout hack).
@@ -71,7 +71,7 @@ test("stdout is capped so a hostile/misbehaving child can't grow it unbounded (W
   );
 });
 
-test("a child that ignores SIGTERM is escalated to SIGKILL after a grace period (WR-04)", async () => {
+test("a child that ignores SIGTERM is escalated to SIGKILL after a grace period", async () => {
   const pidFile = path.join(
     os.tmpdir(),
     `platform-map-wr04-${process.pid}-${Date.now()}.pid`,

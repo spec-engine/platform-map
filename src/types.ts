@@ -28,11 +28,11 @@ export interface UnitSignals {
   workspaceInDegree?: number; // how many sibling units depend on this one
   workspaceOutDegree?: number; // how many sibling units this one depends on
 
-  // linkage-derived (DF adapter)
+  // linkage-derived from .factory/df-config.json (dark-factory adapter)
   hasDfPointer?: boolean; // pointer-only df-config.json present
   dfConfigConflict?: boolean; // non-pointer df-config.json present
 
-  // linkage-derived (SE adapter)
+  // linkage-derived from spec-engine.member.json (spec-engine adapter)
   hasSpecEngineConfig?: boolean; // spec-engine.member.json present
 }
 

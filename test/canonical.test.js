@@ -1,11 +1,11 @@
-// CFG-01: canonicalAdapter — the adapter-level unit contract. White-box tests
+// canonicalAdapter — the adapter-level unit contract. White-box tests
 // importing the built adapter directly from dist/adapters/canonical.mjs (the
 // Phase-2 test-build seam, not the public exports map). Verifies units[] ->
 // PartialUnit mapping, the path-escape drop, the declaredUnits promotion-gate
 // flag, and declared-ref carry-through. The e2e canonical behavior (throw
 // asymmetry, promotion gate, overrides warning, ref probe) is proven in
 // map.test.js; this file pins the adapter's own output shape. Plain ESM .js
-// over dist/ (D-06) — runs unmodified under `node --test` and `bun test` (D-05).
+// over dist/ — runs unmodified under `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -92,7 +92,7 @@ test("canonicalAdapter reports declaredUnits:false for an empty units[]", () => 
   }
 });
 
-// ── T-02-17: a declared path escaping the root is dropped + diagnosed ───────
+// ── a declared path escaping the root is dropped + diagnosed ───────
 
 test("canonicalAdapter drops a unit whose declared path escapes the root", () => {
   const root = mkTempDir();

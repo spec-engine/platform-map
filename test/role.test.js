@@ -1,13 +1,13 @@
-// GRAPH-05/MODEL-03/MODEL-04: deriveRole (the standalone, replayable pure
+// deriveRole (the standalone, replayable pure
 // classifier) + applyRoles (the recursive, override-honoring walker). Plain ESM
-// .js importing the built dist/role.mjs (D-06) — runs unmodified under
-// `node --test` AND `bun test` (D-05).
+// .js importing the built dist/role.mjs — runs unmodified under
+// `node --test` AND `bun test`.
 //
 // Authored RED in plan 03-03 Task 1: until src/role.ts is written + built to
 // dist/role.mjs these assertions fail (module import missing). It encodes the
-// DESIGN §4 top-down first-match rule table, the absent-signal-no-vote honesty
-// (MODEL-02: undefined degree is NOT 0), applyRoles recursion at all depths, and
-// canonical overrides beating derivation (MODEL-04).
+// documented top-down first-match rule table, the absent-signal-no-vote honesty
+// (undefined degree is NOT 0), applyRoles recursion at all depths, and
+// canonical overrides beating derivation.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -28,7 +28,7 @@ function unit(name, signals, children = []) {
   };
 }
 
-// ── deriveRole rule table (DESIGN §4, top-down first match) ──────────────────
+// ── deriveRole rule table (top-down first match) ──────────────────
 
 test("rule 1: deploy/runtime markers -> app (each marker independently)", () => {
   assert.equal(deriveRole({ hasDockerfile: true }), "app");
@@ -87,7 +87,7 @@ test("rule 5: no discriminating signal -> unknown", () => {
   );
 });
 
-// ── absent-signal honesty (MODEL-02: undefined degree is NOT 0) ──────────────
+// ── absent-signal honesty (undefined degree is NOT 0) ──────────────
 
 test("absent workspaceInDegree skips rules 2 AND 4 (undefined is not 0)", () => {
   // out-degree present, exports false, no app markers, but inDegree UNDEFINED:
@@ -107,7 +107,7 @@ test("absent workspaceOutDegree skips rule 4", () => {
   );
 });
 
-// ── applyRoles: recursion at all depths + overrides win (MODEL-04) ───────────
+// ── applyRoles: recursion at all depths + overrides win ───────────
 
 test("applyRoles sets role at every depth from derived signals", () => {
   const shared = unit("root/shared", { workspaceInDegree: 1 }); // rule 2 -> library

@@ -1,8 +1,8 @@
-// RED-96 verification-pass invariants (PMAP-001/002/005): properties over ALL
+// Verification-pass invariants (PMAP-001/002/005): properties over ALL
 // committed fixtures, readdir-driven so future fixtures are auto-covered.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified
-// under `node --test` (D-05). NEVER src/, NEVER .ts (Node 20 has no TS
+// Plain ESM .js importing the already-built dist/ — runs unmodified
+// under `node --test`. NEVER src/, NEVER .ts (Node 20 has no TS
 // stripping and tsdown can't run on Node 20).
 
 import assert from "node:assert/strict";

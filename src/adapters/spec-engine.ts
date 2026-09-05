@@ -1,13 +1,13 @@
-// CFG-05: the spec-engine adapter reads <root>/spec-engine.member.json and
+// the spec-engine adapter reads <root>/spec-engine.member.json and
 // expands its `members` glob (zero-dep, ReDoS-safe matchGlob over a bounded,
 // non-symlink-following walk) into platform-relative sub-member units. All
-// other SE tool semantics (the `specs` pin, `ignore`, any platform manifest)
+// other Spec Engine tool semantics (the `specs` pin, `ignore`, any platform manifest)
 // are discarded. Sub-members carry ONLY the hasSpecEngineConfig linkage
 // signal: map()'s fs census owns every other signal, so adapters never
 // re-scan the tree.
-// Normative: the member config's `ignore` is an SE tag-scan hint and NEVER
-// filters `members`-glob expansion (SE's own expander takes no ignore
-// parameter); the caller-level `opts.ignore` filters child enumeration only.
+// Normative: the member config's `ignore` belongs to Spec Engine's own scanner and NEVER
+// filters `members`-glob expansion (the Spec Engine member expander takes no
+// ignore parameter); the caller-level `opts.ignore` filters child enumeration only.
 // Never-throw: an absent config yields an empty result; an unparseable or
 // non-object config degrades to MALFORMED_CONFIG. Untrusted parsed objects
 // are read by explicit known keys only, never spread.
@@ -20,7 +20,7 @@ import { walk } from "../internal/walk.js";
 import type { Diagnostic, UnitSignals } from "../types.js";
 import type { AdapterContext, AdapterResult, PartialUnit } from "./index.js";
 
-/** The SE member-config filename; map()'s SE-platform sibling filter reuses
+/** The Spec Engine member-config filename; map()'s spec-engine platform sibling filter reuses
  *  it so "config-carrying" means the same file on both sides. */
 export const MEMBER_CONFIG = "spec-engine.member.json";
 const SE_MAX_DEPTH = 16;
@@ -77,7 +77,7 @@ export function specEngineAdapter(
   try {
     text = fs.readFileSync(configPath, "utf8");
   } catch {
-    // Absent (or unreadable) member config is fine: SE members are optional.
+    // Absent (or unreadable) member config is fine: the file is optional.
     return { partialUnits: [], edges: [], diagnostics: [] };
   }
 
@@ -147,7 +147,7 @@ export function specEngineAdapter(
       continue;
     }
     partialUnits.push({
-      // Platform-relative naming, SE's native convention.
+      // Platform-relative naming, Spec Engine's native convention.
       name: `${parentName}/${guard.relative}`,
       path: guard.relative,
       kind: "workspace-package",
@@ -178,7 +178,7 @@ function hasGitEntry(absDir: string): boolean {
 }
 
 /**
- * The SE-platform variant: per-child classification for a platform dir
+ * The spec-engine platform variant: per-child classification for a platform dir
  * carrying a canonical `spec-engine/` dir instead of a platform-map.json;
  * map() swaps it in directly, never the registry. Each config-carrying child
  * runs through specEngineAdapter at its root and is re-anchored to the

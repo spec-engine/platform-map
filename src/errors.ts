@@ -1,4 +1,4 @@
-// [SEC-01] The TWO throwing cases in the whole library: a nonexistent root
+// The TWO throwing cases in the whole library: a nonexistent root
 // passed to detect()/map(), and a present-but-malformed canonical
 // platform-map.json. Everything else degrades to a Diagnostic.
 

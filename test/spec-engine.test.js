@@ -1,17 +1,17 @@
-// CFG-05: specEngineAdapter — the adapter-level unit contract. White-box tests
+// specEngineAdapter — the adapter-level unit contract. White-box tests
 // importing the built adapter directly from dist/adapters/spec-engine.mjs (the
 // Phase-2 test-build seam). Verifies: a member.json sets hasSpecEngineConfig;
 // a `members` glob expands into sub-member units with platform-relative names;
 // glob matches that are files or a basename `spec-engine` dir are skipped;
-// `ignore` NEVER filters expansion (RED-108 AC4 — scan-only, SE parity); a
+// `ignore` NEVER filters expansion (scan-only, Spec Engine parity); a
 // malformed member config degrades to a MALFORMED_CONFIG diagnostic (never
-// throws); and an expanded path escaping the root is dropped (SEC-02). The file-skip / spec-engine-skip / SEC-02 branches
+// throws); and an expanded path escaping the root is dropped. The file-skip / spec-engine-skip / branches
 // use the adapter's TEST-ONLY `deps` seam (mirrors the workspace adapter); the
-// happy-path expansion runs against a real temp-dir tree. The SE-platform e2e
+// happy-path expansion runs against a real temp-dir tree. The spec-engine platform e2e
 // lives in map.test.js.
 //
-// Plain ESM .js over dist/ (D-06) — runs unmodified under `node --test` and
-// `bun test` (D-05).
+// Plain ESM .js over dist/ — runs unmodified under `node --test` and
+// `bun test`.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -135,16 +135,16 @@ test("specEngineAdapter skips a glob match that is a file or a spec-engine dir",
   }
 });
 
-// ── RED-108 (AC4): `ignore` NEVER filters expansion — scan-only, SE parity ──
+// ── PMAP-014: `ignore` NEVER filters expansion — scan-only, Spec Engine parity ──
 
-test("specEngineAdapter emits every matched sub-member regardless of the ignore array (RED-108 AC4)", () => {
+test("specEngineAdapter emits every matched sub-member regardless of the ignore array", () => {
   const root = mkTempDir();
   try {
     writeMember(root, {
       specs: "spec-engine@3",
       members: "packages/*",
       // Basename, rel-path, and glob forms — none of them may filter
-      // expansion: SE's expandWorkspaceMembers takes no ignore parameter,
+      // expansion: Spec Engine's expandWorkspaceMembers takes no ignore parameter,
       // and the member config's ignore is a tag-scan hint, not membership.
       ignore: ["cli", "packages/engine", "packages/*"],
     });
@@ -169,7 +169,7 @@ test("specEngineAdapter emits every matched sub-member regardless of the ignore 
   }
 });
 
-// ── SEC-02 (T-02-22): an expanded path escaping the root is dropped ─────────
+// ── an expanded path escaping the root is dropped ─────────
 
 test("specEngineAdapter drops an expanded sub-member escaping the root with UNIT_PATH_ESCAPE", () => {
   const root = mkTempDir();
@@ -235,16 +235,16 @@ test("specEngineAdapter degrades a valid-JSON-but-non-object member config the s
   }
 });
 
-// ── RED-108: specEnginePlatform — per-child classification ──────────────────
+// ── PMAP-014: specEnginePlatform — per-child classification ──────────────────
 
-test("specEnginePlatform classifies config-carrying children and re-anchors expansion (RED-108)", () => {
+test("specEnginePlatform classifies config-carrying children and re-anchors expansion (PMAP-014)", () => {
   const root = mkTempDir();
   try {
     // The canonical dir itself must never become a unit, even config-carrying.
     fs.mkdirSync(path.join(root, "spec-engine"));
     writeMember(path.join(root, "spec-engine"), { specs: "spec-engine@1" });
 
-    // Bare config-carrying member (the SE fixture shape: no .git, no package.json).
+    // Bare config-carrying member (the Spec Engine fixture shape: no .git, no package.json).
     fs.mkdirSync(path.join(root, "admin"));
     writeMember(path.join(root, "admin"), { specs: "spec-engine@2" });
 
@@ -258,7 +258,7 @@ test("specEnginePlatform classifies config-carrying children and re-anchors expa
     writeMember(path.join(root, "expandable"), {
       specs: "spec-engine@2",
       members: "packages/*",
-      ignore: ["packages/cli"], // AC4: never filters expansion
+      ignore: ["packages/cli"], // never filters expansion
     });
 
     // Plain folder (no config) and unconfigured repo-root child: neither is
@@ -289,7 +289,7 @@ test("specEnginePlatform classifies config-carrying children and re-anchors expa
     assert.equal(
       byName["expandable/packages/cli"].path,
       "expandable/packages/cli",
-      "AC4: the member config's ignore never filters expansion",
+      "the member config's ignore never filters expansion",
     );
     assert.deepEqual(result.edges, []);
   } finally {
@@ -297,7 +297,7 @@ test("specEnginePlatform classifies config-carrying children and re-anchors expa
   }
 });
 
-test("specEnginePlatform child kind is repo iff the child has a .git dir or file (RED-108)", () => {
+test("specEnginePlatform child kind is repo iff the child has a .git dir or file (PMAP-014)", () => {
   const root = mkTempDir();
   try {
     fs.mkdirSync(path.join(root, "git-dir"));
@@ -328,7 +328,7 @@ test("specEnginePlatform child kind is repo iff the child has a .git dir or file
   }
 });
 
-test("specEnginePlatform re-anchors a malformed child config's diagnostic locus and never throws (RED-108)", () => {
+test("specEnginePlatform re-anchors a malformed child config's diagnostic locus and never throws (PMAP-014)", () => {
   const root = mkTempDir();
   try {
     fs.mkdirSync(path.join(root, "admin"));
@@ -349,7 +349,7 @@ test("specEnginePlatform re-anchors a malformed child config's diagnostic locus 
   }
 });
 
-test("specEnginePlatform filters child enumeration by ctx.ignore and guards hostile readdir names (RED-108)", () => {
+test("specEnginePlatform filters child enumeration by ctx.ignore and guards hostile readdir names (PMAP-014)", () => {
   const root = mkTempDir();
   try {
     fs.mkdirSync(path.join(root, "admin"));

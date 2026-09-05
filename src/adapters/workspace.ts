@@ -1,4 +1,4 @@
-// [CFG-06] The workspace-package enumerator for monorepo roots: expands the
+// The workspace-package enumerator for monorepo roots: expands the
 // detection's workspace globs over a bounded walk() and turns every matched
 // directory holding a readable package.json into a kind:"workspace-package"
 // PartialUnit. It reuses the Detection already on ctx (never re-probes a

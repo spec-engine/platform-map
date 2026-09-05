@@ -1,20 +1,20 @@
-// CFG-04: darkFactoryAdapter — the adapter-level unit contract. White-box tests
+// darkFactoryAdapter — the adapter-level unit contract. White-box tests
 // importing the built adapter directly from dist/adapters/dark-factory.mjs (the
 // Phase-2 test-build seam, not the public exports map). Verifies the verbatim
 // pointer-only predicate (exact key-count checks), the dfConfigConflict signal
 // for a present-but-non-pointer config, platform.repos[] -> kind:"repo" units
-// (dependsOn ignored, edges []), the SEC-02 path-escape drop, and the
-// malformed-degrades-to-diagnostic (never throw) contract. The DF-platform e2e
+// (dependsOn ignored, edges []), the path-escape drop, and the
+// malformed-degrades-to-diagnostic (never throw) contract. The dark-factory platform e2e
 // (repos become units; canonical wins a conflict) lives in map.test.js.
 //
 // Fixtures are materialized in temp dirs at runtime rather than committed under
-// test/fixtures/: DF's config lives at `<root>/.factory/df-config.json` and the
+// test/fixtures/: Dark Factory's config lives at `<root>/.factory/df-config.json` and the
 // repo's .gitignore globally ignores `.factory/`, so a committed static fixture
 // could not be tracked. Temp-dir materialization matches the established
 // canonical.test.js / map.test.js pattern and sidesteps the ignore entirely.
 //
-// Plain ESM .js over dist/ (D-06) — runs unmodified under `node --test` and
-// `bun test` (D-05).
+// Plain ESM .js over dist/ — runs unmodified under `node --test` and
+// `bun test`.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -168,7 +168,7 @@ test("darkFactoryAdapter maps platform.repos[] to kind:'repo' units and ignores 
   }
 });
 
-// ── SEC-02 (T-02-22): a repo path escaping the root is dropped + diagnosed ──
+// ── a repo path escaping the root is dropped + diagnosed ──
 
 test("darkFactoryAdapter drops a repo whose declared path escapes the root", () => {
   const root = mkTempDir();

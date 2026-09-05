@@ -1,6 +1,6 @@
 // The pure graph(pm) view over a PlatformMap: operates ONLY on pm.edges and
-// pm.units, no I/O. toDepGraph() is the seam Dark Factory's planWaves() binds
-// to: the exact Map<dependent, Set<dependency>> DF consumes unmodified. Every
+// pm.units, no I/O. toDepGraph() returns the plain Map<dependent, Set<dependency>>
+// shape that dependency-ordering schedulers consume unmodified. Every
 // array result is lexically sorted with the plain `<`/`>` comparator (a
 // view-layer ordering); cycles() delegates to canonicalCycles so it agrees
 // byte-for-byte with map()'s CYCLE_SUSPECTED diagnostics.

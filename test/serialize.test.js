@@ -1,8 +1,8 @@
-// Determinism harness (DETR-01/02): proves toJSON(pm) is byte-identical
+// Determinism harness: proves toJSON(pm) is byte-identical
 // regardless of the input array ordering, and that the serialized output
 // never leaks absolute paths or timestamps. Plain ESM .js importing the
-// already-built dist/ (D-06) — runs unmodified under `node --test` and
-// `bun test` (D-05).
+// already-built dist/ — runs unmodified under `node --test` and
+// `bun test`.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -143,7 +143,7 @@ function reorder(pm) {
   };
 }
 
-test("toJSON is byte-identical for shuffled/reversed input (DETR-02)", () => {
+test("toJSON is byte-identical for shuffled/reversed input", () => {
   const original = buildPlatformMap();
   const reordered = reorder(original);
 
@@ -163,7 +163,7 @@ test("toJSON is byte-identical for shuffled/reversed input (DETR-02)", () => {
   );
 });
 
-test("serialized output contains no absolute filesystem paths (DETR-01)", () => {
+test("serialized output contains no absolute filesystem paths", () => {
   const json = toJSON(buildPlatformMap());
   assert.doesNotMatch(
     json,
@@ -174,7 +174,7 @@ test("serialized output contains no absolute filesystem paths (DETR-01)", () => 
   assert.doesNotMatch(json, /\/Users\//, "must not contain a /Users/ path");
 });
 
-test("serialized output contains no ISO-8601 timestamps (DETR-01)", () => {
+test("serialized output contains no ISO-8601 timestamps", () => {
   const json = toJSON(buildPlatformMap());
   assert.doesNotMatch(
     json,
@@ -195,7 +195,7 @@ test("diagnostics are ordered error > warning > info, then code, then path", () 
   );
 });
 
-test("Unit.sources and UnitSignals.languages are sorted defensively (WR-05)", () => {
+test("Unit.sources and UnitSignals.languages are sorted defensively", () => {
   const pm = buildPlatformMap();
   pm.units[0].sources = ["spec-engine.member.json", "df-config.json"];
   pm.units[0].signals = {

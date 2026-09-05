@@ -1,9 +1,9 @@
-// GRAPH-04 (view half): canonicalCycles is the single Tarjan SCC helper shared by
+// (view half): canonicalCycles is the single Tarjan SCC helper shared by
 // graph().cycles() AND map()'s CYCLE_SUSPECTED emission, so the two agree byte-for-byte.
 // Canonical representation = lexically-sorted SCC membership (size >= 2), outer array
 // sorted by first member — deterministic regardless of node/edge INPUT order (Pitfall 3).
-// Plain ESM .js importing the built dist/internal/scc.mjs (D-06) — runs unmodified under
-// `node --test` and `bun test` (D-05).
+// Plain ESM .js importing the built dist/internal/scc.mjs — runs unmodified under
+// `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

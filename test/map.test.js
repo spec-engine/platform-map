@@ -1,7 +1,7 @@
-// CFG-03/CFG-09/SEC-01: map() end-to-end — single-repo assembly, MapOptions
+// map() end-to-end — single-repo assembly, MapOptions
 // caller-unit injection, adapter toggles, determinism, and the only-throw
 // contract (RootNotFoundError). Plain ESM .js importing the already-built
-// dist/ (D-06) — runs unmodified under `node --test` and `bun test` (D-05).
+// dist/ — runs unmodified under `node --test` and `bun test`.
 //
 // Authored in plan 02-01 Task 1 as the failing e2e that drives Task 3: until
 // map() is exported from dist/index.mjs these assertions fail (map undefined).
@@ -34,7 +34,7 @@ function gitAvailable() {
 }
 const GIT = gitAvailable();
 
-// ── CFG-03: single-repo happy path ─────────────────────────────────────────
+// ── single-repo happy path ─────────────────────────────────────────
 
 test("map() on a single-repo tree returns a deterministic PlatformMap", async () => {
   const pm = await map(singleRepo);
@@ -46,7 +46,7 @@ test("map() on a single-repo tree returns a deterministic PlatformMap", async ()
   assert.ok(Array.isArray(pm.diagnostics));
 });
 
-// ── CFG-09: caller-injected units enter as source:"caller" ─────────────────
+// ── caller-injected units enter as source:"caller" ─────────────────
 
 test('map() injects MapOptions.units as source "caller"', async () => {
   const pm = await map(singleRepo, { units: [{ name: "x", path: "x" }] });
@@ -60,7 +60,7 @@ test('map() injects MapOptions.units as source "caller"', async () => {
   assert.equal(unit.ref, null);
 });
 
-// ── T-02-01: an injected path escaping root is dropped + diagnosed ─────────
+// ── an injected path escaping root is dropped + diagnosed ─────────
 
 test("map() drops an injected unit whose path escapes root with UNIT_PATH_ESCAPE", async () => {
   const pm = await map(singleRepo, {
@@ -77,7 +77,7 @@ test("map() drops an injected unit whose path escapes root with UNIT_PATH_ESCAPE
   );
 });
 
-// ── CFG-09: adapter toggle runs cleanly (no adapters registered yet) ───────
+// ── adapter toggle runs cleanly (no adapters registered yet) ───────
 
 test("map() honors a MapOptions.adapters disable toggle without error", async () => {
   await assert.doesNotReject(() =>
@@ -93,7 +93,7 @@ test("map() output is byte-identical across two invocations", async () => {
   assert.equal(a, b);
 });
 
-// ── CFG-06: monorepo e2e — workspace-package units + fs signal census ──────
+// ── monorepo e2e — workspace-package units + fs signal census ──────
 
 test("map() enumerates workspace-package units with signals for a monorepo", async () => {
   const pm = await map(monorepoPnpm);
@@ -134,7 +134,7 @@ test("map() enumerates workspace-package units with signals for a monorepo", asy
   assert.deepEqual([...pkgA.signals.languages].sort(), ["js", "ts"]);
 });
 
-test("map() keeps a unit with an invalid package name and emits MALFORMED_CONFIG (SEC-03)", async () => {
+test("map() keeps a unit with an invalid package name and emits MALFORMED_CONFIG", async () => {
   const pm = await map(monorepoPnpm);
   const badName = pm.units.find((u) => u.name === "packages/bad-name");
   assert.ok(badName, "the unit with an invalid package name is still present");
@@ -147,9 +147,9 @@ test("map() keeps a unit with an invalid package name and emits MALFORMED_CONFIG
   );
 });
 
-// WR-01: the invalid-package-name diagnostic carries the unit's
+// the invalid-package-name diagnostic carries the unit's
 // platform-relative locus (not just the raw name in the message).
-test("map() stamps the unit path onto an invalid-package-name diagnostic (WR-01)", async () => {
+test("map() stamps the unit path onto an invalid-package-name diagnostic", async () => {
   const pm = await map(monorepoPnpm);
   const malformed = pm.diagnostics.find(
     (d) => d.code === "MALFORMED_CONFIG" && /Has Space/.test(d.message ?? ""),
@@ -199,7 +199,7 @@ test("map() qualifies nested census diagnostic loci with the unit name (DIAG-01)
   }
 });
 
-test("map() recurses into a nested monorepo (DET-02) with workspace-only children", async () => {
+test("map() recurses into a nested monorepo with workspace-only children", async () => {
   const pm = await map(monorepoPnpm);
   const nested = pm.units.find((u) => u.name === "packages/nested-mono");
   assert.ok(nested, "nested monorepo unit present");
@@ -209,14 +209,14 @@ test("map() recurses into a nested monorepo (DET-02) with workspace-only childre
   assert.equal(leaf.name, "packages/nested-mono/packages/leaf");
   assert.equal(leaf.kind, "workspace-package");
   // Nested children come ONLY from workspace expansion — never phantom
-  // sibling/DF/SE sub-units at any nested level.
+  // sibling/Dark Factory / Spec Engine sub-units at any nested level.
   assert.deepEqual(leaf.sources, ["workspace"]);
 });
 
-// WR-03: DET-02 composability — a promoted kind:"repo" constituent that is
+// composability — a promoted kind:"repo" constituent that is
 // itself a monorepo must report mode:"monorepo" at its own node with its
 // workspace-package children expanded (workspace-only, never phantom sub-units).
-test("map() expands a multi-repo constituent that is itself a monorepo to mode:monorepo (WR-03/DET-02)", async () => {
+test("map() expands a multi-repo constituent that is itself a monorepo to mode:monorepo", async () => {
   const parent = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-monosib-"),
   );
@@ -249,24 +249,24 @@ test("map() expands a multi-repo constituent that is itself a monorepo to mode:m
     assert.equal(
       sib.mode,
       "monorepo",
-      "a repo constituent that is itself a monorepo reports mode:monorepo (WR-03)",
+      "a repo constituent that is itself a monorepo reports mode:monorepo",
     );
     assert.equal(sib.units.length, 1, "its workspace child is expanded");
     const [child] = sib.units;
     assert.equal(child.name, "mono-sib/packages/inner-pkg");
     assert.equal(child.kind, "workspace-package");
     // Workspace-expansion-only: the child comes solely from the workspace
-    // adapter — never a phantom sibling/DF/SE sub-unit.
+    // adapter — never a phantom sibling/Dark Factory / Spec Engine sub-unit.
     assert.deepEqual(child.sources, ["workspace"]);
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 
-// IDENT-04: a caller-injected unit colliding with a would-be nested expansion
+// a caller-injected unit colliding with a would-be nested expansion
 // name. The observable contract: one survivor (the first-precedence caller
 // unit), CONFIG_CONFLICT surfaced, nothing doubled.
-test("map() surfaces CONFIG_CONFLICT and keeps the first-precedence unit on a forced name collision (IDENT-04)", async () => {
+test("map() surfaces CONFIG_CONFLICT and keeps the first-precedence unit on a forced name collision", async () => {
   const parent = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-collide-"),
   );
@@ -387,9 +387,9 @@ test("map() monorepo output is byte-identical across two invocations", async () 
   assert.equal(a, b);
 });
 
-// ── CFG-07/MODEL-06: zero-config multi-repo — sibling promotion + ref probe ─
+// ── zero-config multi-repo — sibling promotion + ref probe ─
 
-test("map() promotes zero-config sibling repos to units with map()-resolved refs (CFG-07/MODEL-06)", async () => {
+test("map() promotes zero-config sibling repos to units with map()-resolved refs", async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-multi-"));
   try {
     // repo-a: a real git repo whose origin/HEAD -> main, so the map()-loop probe
@@ -414,7 +414,7 @@ test("map() promotes zero-config sibling repos to units with map()-resolved refs
     }
 
     // repo-b: a bare .git marker (an "absent git repo") — the ref probe must
-    // degrade it to ref:null promptly and never stall the batch (T-02-10).
+    // degrade it to ref:null promptly and never stall the batch .
     const repoB = path.join(parent, "repo-b");
     fs.mkdirSync(path.join(repoB, ".git"), { recursive: true });
 
@@ -471,7 +471,7 @@ test("map() resolves a sibling's ref:null concurrently without stalling on an ab
   }
 });
 
-// ── SEC-01: nonexistent root is the only throw path so far ─────────────────
+// ── nonexistent root is the only throw path so far ─────────────────
 
 test("map() on a nonexistent root rejects with RootNotFoundError", async () => {
   await assert.rejects(
@@ -480,14 +480,14 @@ test("map() on a nonexistent root rejects with RootNotFoundError", async () => {
   );
 });
 
-// WR-04: the post-merge census + monorepo recursion must run under the SAME
-// SEC-01 two-error discipline as the adapter fold — only RootNotFoundError and
+// the post-merge census + monorepo recursion must run under the SAME
+// two-error discipline as the adapter fold — only RootNotFoundError and
 // MalformedConfigError may escape map(); any other throw from the census/
 // recursion path degrades to a diagnostic. censusSignals/workspaceAdapter/merge
 // are all designed not to throw today (no runtime seam forces a throw), so this
 // is a defense-in-depth structural guard: it asserts the enrichment loop is
 // wrapped so a future regression cannot leak an arbitrary error out of map().
-test("map() runs the post-merge census/recursion under the SEC-01 throw guard (WR-04)", () => {
+test("map() runs the post-merge census/recursion under the throw guard", () => {
   const src = fs.readFileSync(path.join(here, "..", "src", "map.ts"), "utf8");
   // Scope to the region between merge() and the ref-probe Promise.all.
   const start = src.indexOf("const merged = merge(");
@@ -504,14 +504,14 @@ test("map() runs the post-merge census/recursion under the SEC-01 throw guard (W
   assert.match(region, /throw error/, "the two hard errors are re-thrown");
 });
 
-// The behavioral half of WR-04: exercising the now-guarded census + nested
+// The behavioral half of exercising the now-guarded census + nested
 // monorepo recursion still resolves (never rejects) — the guard does not change
 // the happy path.
-test("map() still resolves cleanly over the guarded census + recursion path (WR-04)", async () => {
+test("map() still resolves cleanly over the guarded census + recursion path", async () => {
   await assert.doesNotReject(() => map(monorepoPnpm));
 });
 
-// ── CFG-01/CFG-02/SEC-01: canonical platform-map.json authority ────────────
+// ── canonical platform-map.json authority ────────────
 
 function writeCanonical(dir, config) {
   fs.writeFileSync(
@@ -567,11 +567,7 @@ test("map() with a canonical config but no units[] still promotes siblings", asy
     writeCanonical(workdir, { name: "labeled" }); // no units[]
 
     const pm = await map(workdir);
-    assert.equal(
-      pm.name,
-      "labeled",
-      "canonical name is authoritative (CFG-01)",
-    );
+    assert.equal(pm.name, "labeled", "canonical name is authoritative");
     assert.ok(
       pm.units.some(
         (u) => u.name === "repo-a" && u.sources.includes("siblings"),
@@ -583,7 +579,7 @@ test("map() with a canonical config but no units[] still promotes siblings", asy
   }
 });
 
-// SEC-01 hard error #2: a PRESENT-but-malformed canonical config throws.
+// hard error #2: a PRESENT-but-malformed canonical config throws.
 test("map() rejects with MalformedConfigError on a malformed platform-map.json", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
   try {
@@ -594,7 +590,7 @@ test("map() rejects with MalformedConfigError on a malformed platform-map.json",
   }
 });
 
-// SEC-01 asymmetry: a malformed ADAPTER source degrades to a diagnostic while a
+// asymmetry: a malformed ADAPTER source degrades to a diagnostic while a
 // VALID canonical config is applied — map() resolves, never throws.
 test("map() resolves (with MALFORMED_CONFIG) when an adapter source is malformed but canonical is valid", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
@@ -604,7 +600,7 @@ test("map() resolves (with MALFORMED_CONFIG) when an adapter source is malformed
       "packages:\n  - 'packages/*'\n",
     );
     fs.mkdirSync(path.join(root, "packages", "bad"), { recursive: true });
-    // Invalid package name -> SEC-03 adapter-level MALFORMED_CONFIG (not a throw).
+    // Invalid package name -> adapter-level MALFORMED_CONFIG (not a throw).
     fs.writeFileSync(
       path.join(root, "packages", "bad", "package.json"),
       JSON.stringify({ name: "Bad Name" }),
@@ -655,7 +651,7 @@ test("map() warns and ignores a canonical override naming a non-existent unit", 
   }
 });
 
-// ── CFG-05: spec-engine platform e2e — members glob expands into sub-units ──
+// ── spec-engine platform e2e — members glob expands into sub-units ──
 
 function writeMember(dir, config) {
   fs.mkdirSync(dir, { recursive: true });
@@ -695,10 +691,10 @@ test("map() infers spec-engine sub-member units from a members glob with no plat
   }
 });
 
-// SEC-03: a spec-engine sub-member whose package.json name is invalid keeps the
+// a spec-engine sub-member whose package.json name is invalid keeps the
 // unit (identity is its path) and drops only the packageName signal, via map()'s
-// map-owned census — proving SEC-03 re-applies to SE members end-to-end.
-test("map() keeps a spec-engine sub-member with an invalid package name and drops packageName (SEC-03)", async () => {
+// map-owned census — proving the safety census re-applies to Spec Engine members end-to-end.
+test("map() keeps a spec-engine sub-member with an invalid package name and drops packageName", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-se-"));
   try {
     writeMember(root, { specs: "spec-engine@3", members: "packages/*" });
@@ -722,7 +718,7 @@ test("map() keeps a spec-engine sub-member with an invalid package name and drop
   }
 });
 
-// ── CFG-04: dark-factory platform e2e — platform.repos[] become units ──────
+// ── dark-factory platform e2e — platform.repos[] become units ──────
 
 function writeDfConfig(dir, config) {
   const factoryDir = path.join(dir, ".factory");
@@ -798,9 +794,9 @@ test("map() resolves a canonical-vs-dark-factory path disagreement in canonical'
   }
 });
 
-// MODEL-06 declared-ref-wins: a canonical unit declaring a ref keeps it unprobed;
+// declared-ref-wins: a canonical unit declaring a ref keeps it unprobed;
 // a canonical unit without a ref is resolved by map()'s per-unit probe loop —
-// proving MODEL-06 applies to ALL kind:"repo" units, not only siblings.
+// proving applies to ALL kind:"repo" units, not only siblings.
 test("map() keeps a canonical declared ref and probes a canonical unit that omits ref", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-canon-"));
   try {
@@ -838,7 +834,7 @@ test("map() keeps a canonical declared ref and probes a canonical unit that omit
     assert.equal(
       probedUnit.ref,
       expectProbed,
-      "ref-less canonical unit is resolved by map()'s MODEL-06 probe",
+      "ref-less canonical unit is resolved by map()'s probe",
     );
     assert.notEqual(probedUnit.ref, "origin/HEAD");
   } finally {

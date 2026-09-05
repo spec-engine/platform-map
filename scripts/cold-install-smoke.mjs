@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cold-install smoke (PUB-02) — tarball-based, NO live registry.
+// Cold-install smoke — tarball-based, NO live registry.
 //
 // WHY THIS EXISTS:
 // `node --test` and the Bun smoke import the *working* `dist/` directly,

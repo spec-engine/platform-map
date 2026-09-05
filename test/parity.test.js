@@ -1,15 +1,15 @@
-// TEST-01: DF/SE fixture-parity suite. Explicitly traces the named Dark Factory
+// Dark Factory / Spec Engine fixture-parity suite. Explicitly traces the named Dark Factory
 // platform-discovery + sc1-monorepo-discovery cases and Spec Engine discover.ts
 // cases onto platform-map's public map()/detect()/graph() surface, and fills the
 // two genuine gaps the research identified: the turbo orchestrator-overlay
 // committed fixture and the multi-repo-of-monorepos recursion end-to-end.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified under
-// `node --test` and `bun test` (D-05). NEVER src/, NEVER .ts (Node 20 has no TS
+// Plain ESM .js importing the already-built dist/ — runs unmodified under
+// `node --test` and `bun test`. NEVER src/, NEVER .ts (Node 20 has no TS
 // stripping and tsdown can't run on Node 20).
 //
-// Honesty contract (RESEARCH §TEST-01): most DF/SE behaviors are ALREADY covered
-// by the Phase 1-4 unit suites. Where a case is already covered, this file adds a
+// Honesty contract: most Dark Factory / Spec Engine behaviors are ALREADY covered
+// by the existing unit suites. Where a case is already covered, this file adds a
 // single tracing assertion + a `// already covered by <file>` comment rather than
 // duplicating the full case. The genuinely-new coverage is (1) the turbo overlay
 // and (2) the recursive multi-repo-of-monorepos e2e.
@@ -57,7 +57,7 @@ function collectUnitPaths(units, acc = []) {
 // Build a fresh multi-repo-of-monorepos tree under `parent`: two monorepo
 // siblings (each a .git-marked repo whose own packages carry a B→A workspace
 // dep + a start-scripted app), plus a plain non-repo workdir map() is pointed
-// at. Returns the workdir. Mirrors the DESIGN §8 row-4 shape (RESEARCH 245-260).
+// at. Returns the workdir. Mirrors the multi-repo-of-monorepos shape.
 function buildMultiRepoOfMonorepos(parent) {
   for (const [sib, lib, app] of [
     ["sibling-a", "core", "api"],
@@ -95,12 +95,12 @@ function buildMultiRepoOfMonorepos(parent) {
   return workdir;
 }
 
-// ── DF sc1-monorepo-discovery: turbo-over-npm overlay (THE genuine gap) ──────
+// ── Dark Factory sc1-monorepo-discovery: turbo-over-npm overlay (THE genuine gap) ──────
 // Ports dark-factory/tests/sc1-monorepo-discovery.test.cjs "turbo-over-npm"
 // case: the package-list owner (npm workspaces) is detected FIRST; turbo is an
 // overlay-only signal (Pitfall 1). No prior platform-map test exercises the
-// orchestrator overlay — this is the one genuinely-new DF monorepo case.
-test("detect() reports flavor:npm-workspaces AND orchestrator:turbo for a turbo-over-npm monorepo (DF sc1 parity)", () => {
+// orchestrator overlay — this is the one genuinely-new Dark Factory monorepo case.
+test("detect() reports flavor:npm-workspaces AND orchestrator:turbo for a turbo-over-npm monorepo (Dark Factory sc1 parity)", () => {
   const d = detect(monorepoTurbo);
   assert.equal(d.mode, "monorepo");
   assert.equal(
@@ -115,12 +115,12 @@ test("detect() reports flavor:npm-workspaces AND orchestrator:turbo for a turbo-
   );
 });
 
-// ── DF sc1-monorepo-discovery: npm-workspaces B→A edge + depGraph shape ──────
+// ── Dark Factory sc1-monorepo-discovery: npm-workspaces B→A edge + depGraph shape ──────
 // Ports the "npm-workspaces: flavor, 2 pkgs, B→A dep" + "depGraph
-// Map<string,Set<string>>, pkg-b.has(pkg-a)" DF cases. Edges use Unit.name
-// PATHs (DESIGN §2). graph(pm).toDepGraph() is the exact shape DF planWaves()
-// consumes unmodified (GRAPH-02 parity).
-test("map() over the turbo monorepo yields the B→A workspace edge and DF-planWaves toDepGraph shape (DF sc1 parity)", async () => {
+// Map<string,Set<string>>, pkg-b.has(pkg-a)" Dark Factory cases. Edges use Unit.name
+// PATHs (unit names are platform-relative paths). graph(pm).toDepGraph() is the exact shape Dark Factory planWaves()
+// consumes unmodified (parity).
+test("map() over the turbo monorepo yields the B→A workspace edge and Dark Factory-planWaves toDepGraph shape (Dark Factory sc1 parity)", async () => {
   const pm = await map(monorepoTurbo);
   assert.equal(pm.mode, "monorepo");
 
@@ -139,8 +139,8 @@ test("map() over the turbo monorepo yields the B→A workspace edge and DF-planW
   ]);
 
   // toDepGraph(): Map<dependent, Set<dependency>>, keyed by Unit.name paths, with
-  // EVERY package a key (empty Set for the leaf pkg-a). This is the DF
-  // planWaves() seam (GRAPH-02, DESIGN §8 row 4).
+  // EVERY package a key (empty Set for the leaf pkg-a). This is the Dark Factory
+  // planWaves() seam.
   const dg = graph(pm).toDepGraph();
   assert.ok(dg instanceof Map, "toDepGraph() returns a Map");
   assert.deepEqual([...dg.keys()].sort(), ["packages/pkg-a", "packages/pkg-b"]);
@@ -153,12 +153,12 @@ test("map() over the turbo monorepo yields the B→A workspace edge and DF-planW
   );
 });
 
-// ── SE discover.ts (g): members-glob expansion — TRACE (already covered) ─────
-// SE case (g): a `members` glob expands into one sub-member unit per subdir with
+// ── Spec Engine discover.ts (g): members-glob expansion — TRACE (already covered) ─────
+// Spec Engine case (g): a `members` glob expands into one sub-member unit per subdir with
 // platform-relative names. Fully covered by map.test.js
 // "infers spec-engine sub-member units from a members glob with no
 // platform-map.json" — this is a single tracing assertion, not a re-port.
-test("map() expands a spec-engine members glob into per-subdir units (SE discover.ts (g) parity trace)", async () => {
+test("map() expands a spec-engine members glob into per-subdir units (Spec Engine discover.ts (g) parity trace)", async () => {
   // already covered by test/map.test.js + test/spec-engine.test.js — parity trace
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-parity-se-"),
@@ -187,16 +187,16 @@ test("map() expands a spec-engine members glob into per-subdir units (SE discove
   }
 });
 
-// ── SE discover.ts (c): malformed member config — INTENTIONAL DIVERGENCE ─────
-// SE case (c): discover.ts THROWS on a malformed member config. platform-map
+// ── Spec Engine discover.ts (c): malformed member config — INTENTIONAL DIVERGENCE ─────
+// Spec Engine case (c): discover.ts THROWS on a malformed member config. platform-map
 // deliberately does NOT — a malformed *adapter* source degrades to a
-// MALFORMED_CONFIG diagnostic and mapping still succeeds (DESIGN §5 asymmetry:
+// MALFORMED_CONFIG diagnostic and mapping still succeeds (the error-contract asymmetry:
 // only a nonexistent root + a malformed *canonical* config throw). This asserts
 // the platform-map behavior and documents the divergence so the "port" is not
 // mistaken for a 1:1 mapping.
 // already covered by test/spec-engine.test.js "degrades a malformed member
 // config to MALFORMED_CONFIG" — parity trace of the deliberate divergence.
-test("map() degrades a malformed spec-engine member config to a diagnostic instead of throwing (SE discover.ts (c) divergence)", async () => {
+test("map() degrades a malformed spec-engine member config to a diagnostic instead of throwing (Spec Engine discover.ts (c) divergence)", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-parity-se-"),
   );
@@ -208,7 +208,7 @@ test("map() degrades a malformed spec-engine member config to a diagnostic inste
     let pm;
     await assert.doesNotReject(async () => {
       pm = await map(root);
-    }, "platform-map degrades (SE would throw here)");
+    }, "platform-map degrades (Spec Engine would throw here)");
     assert.ok(
       pm.diagnostics.some((d) => d.code === "MALFORMED_CONFIG"),
       "expected a MALFORMED_CONFIG diagnostic from the degraded adapter source",
@@ -218,8 +218,8 @@ test("map() degrades a malformed spec-engine member config to a diagnostic inste
   }
 });
 
-// ── The richest DF port: multi-repo-of-monorepos recursion end-to-end ────────
-// DESIGN §8 row 4 + DET-02 composability, built entirely in os.tmpdir() (a
+// ── The richest Dark Factory port: multi-repo-of-monorepos recursion end-to-end ────────
+// multi-repo-of-monorepos + composability, built entirely in os.tmpdir() (a
 // committed .git can't exist — Pitfall 1). Two monorepo siblings, each promoted
 // to a kind:"repo" unit that itself reports mode:"monorepo" with its
 // workspace-package children expanded, per-sibling edges (no cross-repo edge),
@@ -227,7 +227,7 @@ test("map() degrades a malformed spec-engine member config to a diagnostic inste
 // markers the ref probe yields ref:null on both branches (real-repo refs are
 // covered by map.test.js:258-313), so this asserts the ref:null fallback rather
 // than skipping silently when git is absent.
-test("map() maps a multi-repo-of-monorepos tree recursively (DET-02 composability e2e)", async () => {
+test("map() maps a multi-repo-of-monorepos tree recursively (composability e2e)", async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-mrom-"));
   try {
     const workdir = buildMultiRepoOfMonorepos(parent);
@@ -304,21 +304,21 @@ test("map() maps a multi-repo-of-monorepos tree recursively (DET-02 composabilit
       assert.equal(p.includes(parent), false);
     }
 
-    // DETR-02: byte-identical across two invocations of the same temp tree.
+    // byte-identical across two invocations of the same temp tree.
     assert.equal(toJSON(await map(workdir)), toJSON(await map(workdir)));
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 
-// ── SE discover.ts (a)/(d): sibling classification + lex order ───────────────
-// SE case (a): a sibling repo-root with .git + package.json but no member/adapter
+// ── Spec Engine discover.ts (a)/(d): sibling classification + lex order ───────────────
+// Spec Engine case (a): a sibling repo-root with .git + package.json but no member/adapter
 // config is a `skipped` entry — in platform-map, when a canonical config declares
 // units[] the promotion gate suppresses such siblings and emits an
-// UNCONFIGURED_SIBLING diagnostic (bucket-2 parity, DESIGN §8 SE row 1). SE case
-// (d): two repo-root siblings are reported in lexical-by-name order — DETR-01, the
+// UNCONFIGURED_SIBLING diagnostic (bucket-2 parity). Spec Engine case
+// (d): two repo-root siblings are reported in lexical-by-name order —, the
 // serializer is the sole sort site.
-test("map() emits UNCONFIGURED_SIBLING for unconfigured siblings in lexical order (SE discover.ts (a)/(d) parity)", async () => {
+test("map() emits UNCONFIGURED_SIBLING for unconfigured siblings in lexical order (Spec Engine discover.ts (a)/(d) parity)", async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-se-sib-"));
   try {
     // Two repo-root siblings (deliberately out of lexical order on disk) with
@@ -347,7 +347,7 @@ test("map() emits UNCONFIGURED_SIBLING for unconfigured siblings in lexical orde
       pm.units.some((u) => u.name === "alpha-repo" || u.name === "zulu-repo"),
       false,
     );
-    // Lex-by-name order (DETR-01): alpha before zulu in the serialized output.
+    // Lex-by-name order: alpha before zulu in the serialized output.
     assert.deepEqual(
       unconfigured.map((d) => d.path),
       ["../alpha-repo", "../zulu-repo"],
@@ -357,11 +357,11 @@ test("map() emits UNCONFIGURED_SIBLING for unconfigured siblings in lexical orde
   }
 });
 
-// ── DETR-02 sweep across the committed parity fixtures ───────────────────────
+// ── sweep across the committed parity fixtures ───────────────────────
 // The serializer is the sole sort site; two invocations over the same tree must
 // be byte-identical (the multi-repo temp-tree determinism is asserted in its own
 // case above).
-test("map() output is byte-identical across two invocations for every committed parity fixture (DETR-02)", async () => {
+test("map() output is byte-identical across two invocations for every committed parity fixture", async () => {
   for (const root of [monorepoTurbo, syntheticSpecEngine]) {
     assert.equal(
       toJSON(await map(root)),

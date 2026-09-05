@@ -1,16 +1,16 @@
-// GRAPH-02/03/04 (view side): graph(pm) is the pure view over pm.edges + pm.units that
+// (view side): graph(pm) is the pure view over pm.edges + pm.units that
 // Dark Factory's planWaves binds to. toDepGraph() returns the EXACT Map<string,Set<string>>
-// (dependent -> Set(dependency)) DF consumes unmodified; dependenciesOf/dependentsOf are
+// (dependent -> Set(dependency)) Dark Factory consumes unmodified; dependenciesOf/dependentsOf are
 // transitive lex-sorted closures; roots()/leaves() are in/out-degree 0; cycles() delegates
 // to the shared canonicalCycles. No I/O, sorts via plain `<`/`>` (never localeCompare).
-// Plain ESM .js importing built dist/graph.mjs + dist/internal/serialize.mjs (D-06).
+// Plain ESM .js importing built dist/graph.mjs + dist/internal/serialize.mjs.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { graph } from "../dist/graph.mjs";
 
-/** Vendored, UNMODIFIED copy of DF's planWaves
- *  (../dark-factory/.../monorepo-wave-planner.cjs L62-101). The parity contract is:
+/** Vendored, UNMODIFIED copy of Dark Factory's planWaves
+ *  (a dependency-ordering wave planner). The parity contract is:
  *  feeding graph(pm).toDepGraph() + the unit-name list into this body produces waves
  *  with no adaptation. Do NOT edit this to make the test pass — that would break the seam. */
 function planWaves(packages, depGraph) {
@@ -105,7 +105,7 @@ test("toDepGraph: EVERY workspace-package is a key, leaves get an empty Set", ()
   assert.equal(g.get("core").size, 0);
 });
 
-// WR-01: inner Set iteration must be lexically sorted regardless of edge input
+// inner Set iteration must be lexically sorted regardless of edge input
 // order — deterministic even for a caller-built PlatformMap not run through
 // serialize.ts (whose edges arrive here in reverse-lexical order).
 test("toDepGraph: inner Set iteration is lexically sorted regardless of edge order", () => {
@@ -143,7 +143,7 @@ test("toDepGraph: recurses into nested monorepo, collects only workspace-package
   assert.deepEqual([...g.get("root/a")], ["root/b"]);
 });
 
-test("planWaves parity: DF's UNMODIFIED planWaves consumes toDepGraph() directly", () => {
+test("planWaves parity: Dark Factory's UNMODIFIED planWaves consumes toDepGraph() directly", () => {
   const pm = diamond();
   const gv = graph(pm);
   const packages = [...gv.toDepGraph().keys()].map((name) => ({ name }));

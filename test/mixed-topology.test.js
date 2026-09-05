@@ -1,11 +1,11 @@
-// RED-96 gap test (PMAP-009): the MIXED platform shape — a plain single-repo
+// PMAP-009 gap test: the MIXED platform shape — a plain single-repo
 // sibling and a monorepo sibling promoted together in one map. Every other
 // topology row (single, monorepo flavors, multi-repo, multi-repo-of-monorepos)
 // already has end-to-end coverage; this file closes the last row of the
 // PMAP-009 topology table.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified
-// under `node --test` (D-05). NEVER src/, NEVER .ts (Node 20 has no TS
+// Plain ESM .js importing the already-built dist/ — runs unmodified
+// under `node --test`. NEVER src/, NEVER .ts (Node 20 has no TS
 // stripping and tsdown can't run on Node 20).
 
 import assert from "node:assert/strict";
@@ -113,7 +113,7 @@ test("map() maps a mixed platform (plain single-repo sibling + monorepo sibling)
     // Edges: EXACTLY the one workspace edge inside mono-lib. This
     // simultaneously proves the workspace edge AND pins that plain-svc's
     // dependency on @mono/core creates NO cross-repo edge — edges are
-    // deliberately scoped per sibling set in v0.1.0. PMAP-013 (RED-98) must
+    // deliberately scoped per sibling set in v0.1.0. PMAP-013 must
     // consciously break this assertion when cross-repo edges land.
     assert.deepEqual(pm.edges, [
       {
@@ -123,7 +123,7 @@ test("map() maps a mixed platform (plain single-repo sibling + monorepo sibling)
       },
     ]);
 
-    // DETR-02: byte-identical across two invocations of the same temp tree.
+    // byte-identical across two invocations of the same temp tree.
     assert.equal(toJSON(await map(workdir)), toJSON(await map(workdir)));
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });

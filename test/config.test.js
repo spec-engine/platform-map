@@ -1,9 +1,9 @@
-// CFG-02/SEC-01: readCanonicalConfig — the hand-rolled zero-dep canonical
+// readCanonicalConfig — the hand-rolled zero-dep canonical
 // validator and its three DISTINCT location-tagged throws (read / parse /
 // validate). This is the SECOND (and final) hard-error path in the whole
 // library; adapter sources never throw (that asymmetry is asserted at the
 // map() level in map.test.js). Plain ESM .js importing the already-built dist/
-// (D-06) — runs unmodified under `node --test` and `bun test` (D-05).
+// — runs unmodified under `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -36,7 +36,7 @@ function writeConfig(dir, contents) {
   );
 }
 
-// ── absent = fine (D8): no throw, returns null ─────────────────────────────
+// ── absent = fine: no throw, returns null ─────────────────────────────
 
 test("absent platform-map.json returns null (no throw)", () => {
   const root = mkTempDir();

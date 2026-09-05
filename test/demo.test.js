@@ -1,9 +1,9 @@
-// RED-100 rot-proof: the human-runnable demo (scripts/demo-platform.mjs) is
+// Demo rot-proof: the human-runnable demo (scripts/demo-platform.mjs) is
 // pinned to reality — if the library's behavior changes, this test goes red
 // before a human ever sees a stale demo. Spawns the demo as a real subprocess
 // (which itself spawns ~12 built-CLI runs) and asserts exit 0 plus the key
-// proof lines on stdout. Plain ESM .js over dist/ (D-06); runs under
-// `node --test` and `bun test` (D-05).
+// proof lines on stdout. Plain ESM .js over dist/; runs under
+// `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(here, "..", "dist", "platform-map.mjs");
 const DEMO = path.join(here, "..", "scripts", "demo-platform.mjs");
 
-test("demo script: exit 0 and every proof line present (RED-100)", {
+test("demo script: exit 0 and every proof line present", {
   timeout: 120_000,
 }, () => {
   // Fail clearly (not obscurely mid-demo) if the built CLI is missing.
@@ -37,7 +37,7 @@ test("demo script: exit 0 and every proof line present (RED-100)", {
   // PMAP-010: from-inside vs at-root byte-identity was actually compared.
   assert.match(r.stdout, /PMAP-010 equivalence: BYTE-IDENTICAL/);
 
-  // D-02/IP-6: the local-override byte-comparison matched.
+  // the local-override byte-comparison matched.
   assert.match(
     r.stdout,
     /Local override: MATCH — byte-identical with and without platform-map\.local\.json/,

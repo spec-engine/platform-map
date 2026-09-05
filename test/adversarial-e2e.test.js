@@ -1,13 +1,13 @@
-// TEST-03: adversarial safety proven END-TO-END through map(). The Phase-1
+// adversarial safety proven END-TO-END through map(). The
 // unit tests already prove matchGlob (glob.test.js), walk (walk.test.js), and
 // resolveWithinRoot (path-guard.test.js) are safe in isolation; this file
 // drives the SAME hostile vectors — ReDoS globs, a symlink cycle, and a
 // canonical escaping unit path — through the full map() assembly path to prove
-// the mitigations survive integration. Plus a DETR-02 determinism sweep across
-// all Phase-5 fixtures. NO source changes: the tests ARE the verification.
+// the mitigations survive integration. Plus a determinism sweep across
+// all committed fixtures. NO source changes: the tests ARE the verification.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified
-// under `node --test` and `bun test` (D-05). Every hostile fixture (symlinks,
+// Plain ESM .js importing the already-built dist/ — runs unmodified
+// under `node --test` and `bun test`. Every hostile fixture (symlinks,
 // escaping configs) is built at TEST-TIME in os.tmpdir() with a finally
 // rmSync cleanup — never committed (symlinks/`.git` cannot be committed
 // cleanly). Pure fs: nothing here is guarded on git.
@@ -27,10 +27,10 @@ const fixturesDir = path.join(here, "fixtures");
 
 // A generous wall-clock cap: the segment matcher's cost is polynomial, so even
 // the pathological corpus resolves in single-digit ms — 5000ms proves "bounded,
-// never a hang" with enormous headroom for a loaded CI runner (T-05-04/05).
+// never a hang" with enormous headroom for a loaded CI runner (05).
 const BOUND_MS = 5000;
 
-// DETR-02 helper: assert map(root) is byte-identical across two invocations and
+// helper: assert map(root) is byte-identical across two invocations and
 // that no absolute path leaks into the DERIVED structure. The top-level `root`
 // field is the one documented echo of the input root (serialize.ts: unit paths
 // are "root-relative only") — it is deterministic given the same input, so it is
@@ -42,7 +42,7 @@ async function assertDeterministicAndRootRelative(label, root, absNeedle) {
   assert.equal(
     first,
     second,
-    `${label}: toJSON(map(root)) must be byte-identical across two invocations (DETR-02)`,
+    `${label}: toJSON(map(root)) must be byte-identical across two invocations`,
   );
   const { root: _echoedRoot, ...derived } = JSON.parse(first);
   assert.equal(
@@ -52,7 +52,7 @@ async function assertDeterministicAndRootRelative(label, root, absNeedle) {
   );
 }
 
-// ── T-05-04: ReDoS globs via a workspace manifest, driven through map() ─────
+// ── ReDoS globs via a workspace manifest, driven through map() ─────
 // The corpus patterns (deeply-nested **, a 500-segment literal, an evil
 // `a*a*a…` wildcard) are the exact shapes a naive `**`→regex compile would
 // blow up on. Fed to map() as a pnpm-workspace `packages:` list, map() must
@@ -60,7 +60,7 @@ async function assertDeterministicAndRootRelative(label, root, absNeedle) {
 // the pathological patterns match nothing — surface UNMATCHED_PATTERN rather
 // than hang or throw. A real candidate dir is present so the matcher actually
 // runs the patterns against a workspace census, exercising the full path.
-test("map() over a ReDoS-glob workspace manifest resolves bounded and emits UNMATCHED_PATTERN (T-05-04)", async () => {
+test("map() over a ReDoS-glob workspace manifest resolves bounded and emits UNMATCHED_PATTERN", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-adv-redos-"),
   );
@@ -96,11 +96,11 @@ test("map() over a ReDoS-glob workspace manifest resolves bounded and emits UNMA
   }
 });
 
-// ── T-05-05: an a->b->a symlink cycle inside a mapped monorepo tree ─────────
+// ── an a->b->a symlink cycle inside a mapped monorepo tree ─────────
 // map() must terminate in bounded time (no-follow walker + depth/entry caps)
 // and never enumerate the cycle-linked dirs as units — the no-follow contract
 // holds end-to-end, not just in walk() in isolation.
-test("map() over a symlink cycle resolves bounded and never enumerates the linked dirs as units (T-05-05)", async () => {
+test("map() over a symlink cycle resolves bounded and never enumerates the linked dirs as units", async () => {
   // Wrapper dir isolates the run from concurrent tests' tmpdir fixtures.
   const parent = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-adv-cycle-"),
@@ -158,13 +158,13 @@ test("map() over a symlink cycle resolves bounded and never enumerates the linke
   }
 });
 
-// ── T-05-06: a canonical config declaring an ESCAPING unit path ─────────────
-// SEC-02 is unconditional: even when the escaping `../../etc` path is authored
+// ── a canonical config declaring an ESCAPING unit path ─────────────
+// the path-escape guard is unconditional: even when the escaping `../../etc` path is authored
 // canonical intent (not a hostile injected caller unit), resolveWithinRoot drops
 // the unit and emits UNIT_PATH_ESCAPE. Canonical authority does not override the
 // path guard — proven here through the full map() assembly, not resolveWithinRoot
 // in isolation.
-test("map() drops a canonical unit whose declared path escapes root with UNIT_PATH_ESCAPE (T-05-06)", async () => {
+test("map() drops a canonical unit whose declared path escapes root with UNIT_PATH_ESCAPE", async () => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "platform-map-adv-escape-"),
   );
@@ -190,19 +190,19 @@ test("map() drops a canonical unit whose declared path escapes root with UNIT_PA
     );
     assert.ok(
       pm.diagnostics.some((d) => d.code === "UNIT_PATH_ESCAPE"),
-      "expected a UNIT_PATH_ESCAPE diagnostic (SEC-02 is unconditional)",
+      "expected a UNIT_PATH_ESCAPE diagnostic (the path-escape guard is unconditional)",
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-// ── T-05-07: DETR-02 determinism sweep across all Phase-5 fixtures ──────────
+// ── determinism sweep across all committed fixtures ──────────
 // The serializer is the sole sort site, so byte-identical toJSON across two runs
-// is the determinism proof (DESIGN §5). Committed fixtures cover the three
+// is the determinism proof (one sort seam). Committed fixtures cover the three
 // Phase-5 topologies; a rebuilt temp monorepo covers the adversarial-tree shape.
 // Each fixture also asserts no absolute path leaks into the derived structure.
-test("map() output is byte-identical across runs with no absolute-path leak, for every committed Phase-5 fixture (DETR-02)", async () => {
+test("map() output is byte-identical across runs with no absolute-path leak, for every committed committed fixtures", async () => {
   for (const name of [
     "synthetic-spec-engine",
     "monorepo-turbo",
@@ -213,7 +213,7 @@ test("map() output is byte-identical across runs with no absolute-path leak, for
   }
 });
 
-test("map() over a rebuilt temp monorepo is byte-identical across runs with no tmpdir-path leak (DETR-02)", async () => {
+test("map() over a rebuilt temp monorepo is byte-identical across runs with no tmpdir-path leak", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "platform-map-adv-detr-"));
   try {
     fs.writeFileSync(

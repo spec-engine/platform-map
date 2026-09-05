@@ -1,7 +1,7 @@
 // map(): the full-assembly orchestrator: detect -> adapters -> merge ->
 // per-unit signal census (+ nested monorepo expansion) -> edges -> degrees ->
 // cycles -> roles -> serialize.
-// SEC-01 throw contract: only RootNotFoundError (nonexistent root) and
+// throw contract: only RootNotFoundError (nonexistent root) and
 // MalformedConfigError (present-but-broken platform-map.json) ever escape
 // map(); every other failure degrades to a diagnostic.
 
@@ -225,7 +225,7 @@ function applyCensusSignals(unit: Unit, census: UnitSignals): void {
  *  children via the workspace adapter ONLY (the root-level adapters would
  *  fabricate phantom sub-units) and sets mode:"monorepo". Depth-bounded.
  *  A qualified child whose name is already registered is never attached:
- *  a same-location twin (e.g. an SE sub-member re-found by the workspace
+ *  a same-location twin (e.g. a spec-engine sub-member re-found by the workspace
  *  expansion) is dropped silently, a different-location collision is dropped
  *  with CONFIG_CONFLICT. `platformPath` is this unit's platform-relative
  *  location, the base the children's registry locations are joined under. */
@@ -342,7 +342,7 @@ export async function map(
     }
   }
 
-  // SEC-01 hard-error #2: a PRESENT-but-malformed platform-map.json throws
+  // hard-error #2: a PRESENT-but-malformed platform-map.json throws
   // MalformedConfigError before detection/adapters run. The pre-read lets the
   // config's `ignore` thread into detect()'s sibling scan; the canonical
   // adapter's later re-read always agrees (same process, no writes).
@@ -367,9 +367,9 @@ export async function map(
       : (preConfig?.ignore ?? [])),
   ];
 
-  // SE-platform discovery: a canonical `spec-engine/` dir with NO
+  // Spec Engine platform discovery: a canonical `spec-engine/` dir with NO
   // platform-map.json at the root is a platform by Spec Engine's own
-  // declaration; the per-child SE adapter variant runs, the sibling scan runs
+  // declaration; the per-child spec-engine adapter variant runs, the sibling scan runs
   // at ".", and per-child member configs confirm promotion. No upward walk.
   const sePlatform =
     opts.adapters?.["spec-engine"] !== false &&
@@ -378,7 +378,7 @@ export async function map(
     isDirectory(path.join(effectiveRoot, "spec-engine"));
 
   // detect() throws RootNotFoundError for a nonexistent root before any
-  // adapter runs. With a definition (or SE platform) scanRoot is forced to
+  // adapter runs. With a definition (or spec-engine platform) scanRoot is forced to
   // "." so the root's own children become detection.siblings.
   const detection = detect(effectiveRoot, {
     scanRoot: definition !== null || sePlatform ? "." : opts.scanRoot,
@@ -397,7 +397,7 @@ export async function map(
     );
   }
 
-  // SE mode re-scans with the widened candidate gate (.git dir-or-file OR
+  // Spec Engine platform mode re-scans with the widened candidate gate (.git dir-or-file OR
   // package.json); config-carrying children are confirmed members, dropped
   // like listed members above. Always materialized; scan diagnostics dropped.
   if (sePlatform) {
@@ -469,7 +469,7 @@ export async function map(
       const result = await adapter(effectiveRoot, ctx);
       results.push({ source: name, result });
     } catch (error) {
-      // SEC-01: only RootNotFoundError and MalformedConfigError propagate;
+      // only RootNotFoundError and MalformedConfigError propagate;
       // every other adapter failure degrades to a diagnostic.
       if (
         error instanceof RootNotFoundError ||
@@ -489,7 +489,7 @@ export async function map(
     }
   }
 
-  // Promotion gate ("detection proposes, config disposes"); in SE mode the
+  // Promotion gate ("detection proposes, config disposes"); in spec-engine platform mode the
   // disposing config is per-child member config presence.
   const merged = merge(results, canonicalSide?.declaredUnits ?? sePlatform);
 
@@ -536,7 +536,7 @@ export async function map(
       ? (diskDirByName.get(unit.name) as string | null)
       : path.join(effectiveRoot, unit.path);
 
-  // Same SEC-01 discipline as the adapter fold, guarded per-unit so one
+  // Same discipline as the adapter fold, guarded per-unit so one
   // failure never aborts the rest; depSideTable feeds buildEdges.
   // The name registry is seeded with every already-assembled unit so nested
   // expansion can never re-mint an identity a flat unit already owns; merge()
@@ -587,7 +587,7 @@ export async function map(
   }
 
   // map(), not the siblings adapter, owns the default-branch ref probe so it
-  // applies uniformly to every kind:"repo" unit (MODEL-06); a declared ref
+  // applies uniformly to every kind:"repo" unit; a declared ref
   // wins, only ref:null units are probed. Probes run CONCURRENTLY, each
   // bounded by probeRef's own timeout (it never rejects), so one hostile or
   // slow repo degrades to ref:null without stalling the batch.
@@ -728,7 +728,7 @@ export async function map(
   const edges = built.edges;
   for (const d of built.diagnostics) extraDiagnostics.push(d);
 
-  // GRAPH-05 STRICT ORDER: degrees -> cycles -> roles. Degrees MUST be
+  // STRICT ORDER: degrees -> cycles -> roles. Degrees MUST be
   // written before applyRoles or deriveRole's degree-sensitive rules read
   // `undefined` and misclassify libraries as unknown.
   // (1) Degrees (0 written explicitly) onto every workspace-package unit.
@@ -763,7 +763,7 @@ export async function map(
       (path.basename(path.resolve(effectiveRoot)) || "(root)"),
     // Equals the caller's own string whenever no re-anchor happened.
     root: effectiveRoot,
-    // A definition (or SE platform) forces multi-repo: a platform root is
+    // A definition (or spec-engine platform) forces multi-repo: a platform root is
     // multi-repo by declaration, not by sibling census.
     mode: definition !== null || sePlatform ? "multi-repo" : detection.mode,
     units: merged.units,

@@ -1,8 +1,7 @@
-// Bun-runtime smoke test (D-05 amendment — see comment in package.json's
-// "test:bun" script and ci.yml for the full rationale).
+// Bun-runtime smoke test (see ci.yml for the lane it runs in).
 //
 // WHY THIS FILE EXISTS AND WHY IT LIVES OUTSIDE test/:
-// 01-RESEARCH.md's stack decision (D-05) assumed "basic node:test usage
+// The original stack decision assumed "basic node:test usage
 // runs unmodified and fully under `bun test`", citing Bun's own compat-matrix
 // docs and a passing fixture in oven-sh/bun's source tree. That assumption is
 // FALSIFIED under Bun 1.3.14: any node:test file containing a nested test()
@@ -12,7 +11,7 @@
 // "test() inside another test() is not yet implemented in Bun"
 // (oven-sh/bun#5090). This is a Bun engine limitation, not a bug in this
 // package's tests, and it is not fixable by editing test/*.test.js without
-// rewriting them away from node:test entirely (out of scope per BUILD-04's
+// rewriting them away from node:test entirely (out of scope for the dual-runtime requirement's
 // intent: prove platform-map works AS A CONSUMER under Bun, not prove
 // node:test's own compat surface).
 //
@@ -20,7 +19,7 @@
 // `node --test` (Node 20/22 lanes). Separately, prove the BUILT package
 // (dist/) works correctly when consumed from Bun by writing a real bun:test
 // smoke test against the actual public surface (detect() + toJSON) — this
-// still satisfies BUILD-04's intent ("test suite passes across Node 20,
+// still satisfies the dual-runtime requirement's intent ("test suite passes across Node 20,
 // Node 22, and Bun") because it genuinely exercises platform-map under the
 // Bun runtime; it just uses Bun's own native test API instead of trying to
 // force node:test's incompatible surface through Bun's compat shim.
@@ -33,8 +32,7 @@
 // "_spec_" in the filename — `.spec.mjs` satisfies Bun while staying
 // invisible to Node. Combined with living in test-bun/ (not test/), this
 // file is picked up by `bun test test-bun/` and ignored by `node --test`.
-// See the "node --test still 51/51, did not discover this file" check in
-// 01-03-SUMMARY.md / the fix commit for the empirical verification.
+// Verified empirically: `node --test` does not discover this file.
 
 import { expect, test } from "bun:test";
 import * as fs from "node:fs";

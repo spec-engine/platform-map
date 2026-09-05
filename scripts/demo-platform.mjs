@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Human-runnable demo (RED-100) — fixture-CREATING script.
+// Human-runnable demo — fixture-CREATING script.
 //
 // WHY THIS EXISTS:
 // The 300+ tests prove platform-map to CI, but nothing lets a HUMAN watch it
@@ -138,7 +138,7 @@ function shortenPath(s) {
 try {
   console.log(`platform-map demo — scratch dir: ${scratch}`);
   // Each scenario lives under its OWN parent dir: sibling .git repos compose
-  // into rung-1/2 maps (DET-02/04), so scenarios sharing one parent would
+  // into rung-1/2 maps, so scenarios sharing one parent would
   // contaminate each other's output and make the demo order-dependent.
 
   // ═══ Scenario 1: single repo (rung 1) ══════════════════════════════════════
@@ -245,7 +245,7 @@ try {
   // ═══ Scenario 3b: `init` bootstrap (the single writer) ═════════════════════
   banner(
     "Scenario 3b — `init --yes` bootstraps a config-less platform",
-    "PROVES: CLI-04 — on a fresh copy of the acme platform WITHOUT any",
+    "PROVES: on a fresh copy of the acme platform WITHOUT any",
     "platform-map.json files, `init --yes` writes the definition + one marker",
     "per .git member, and the result immediately maps as rung 3.",
   );
@@ -274,7 +274,7 @@ try {
   banner(
     "Scenario 4 — marker drift + per-user local override",
     "PROVES: PMAP-012 — a member marker naming the WRONG platform yields a",
-    "PLATFORM_DRIFT warning (never silent); and D-02/IP-6 — relocating a",
+    "PLATFORM_DRIFT warning (never silent); and relocating a",
     "member on disk via platform-map.local.json changes NOTHING in the",
     "output: byte-identical, and the local path never leaks.",
   );
@@ -339,7 +339,7 @@ try {
   );
   check(
     !afterLocal.stdout.includes("_relocated"),
-    "the per-user disk location never leaks into the output (IP-6)",
+    "the per-user disk location never leaks into the output",
   );
 
   // ═══ verdict ════════════════════════════════════════════════════════════════
@@ -368,7 +368,7 @@ try {
  *  same tree WITHOUT any platform-map.json (the `init` demo's starting
  *  point). */
 function buildAcmePlatform(root, { withConfigs }) {
-  gitDir(root); // the platform root is itself a small git repo (D-01)
+  gitDir(root); // the platform root is itself a small git repo
   if (withConfigs) {
     writeJson(path.join(root, "platform-map.json"), {
       name: "acme",

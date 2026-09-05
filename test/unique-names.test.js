@@ -1,4 +1,4 @@
-// IDENT-04: direct unit tests over dist/internal/unique-names.mjs, the claim
+// direct unit tests over dist/internal/unique-names.mjs, the claim
 // registry backing map()'s nested-expansion dedupe and the post-assembly
 // uniqueness guard behind the types.ts Unit.name uniqueness contract.
 

@@ -1,6 +1,6 @@
-// [CFG-07] The siblings adapter: promotes zero-config sibling git repos into
+// The siblings adapter: promotes zero-config sibling git repos into
 // provisional PartialUnits for merge()'s promotion gate ("config disposes"),
-// reusing the base scanSiblings scan and layering on DF-pointer detection at
+// reusing the base scanSiblings scan and layering on pointer detection at
 // `.factory/df-config.json`. Ref resolution is deliberately not here: map()'s
 // per-unit loop probes refs uniformly for every kind:"repo" unit, so emitted
 // units carry no declared ref. Emits edges:[] and never sorts; a failed scan
@@ -52,7 +52,7 @@ export async function siblingsAdapter(
   const partialUnits: PartialUnit[] = [];
   for (const sib of siblings) {
     // sib.path is root-relative POSIX and may legitimately climb via "..";
-    // resolve it back to an absolute path to probe the DF pointer.
+    // resolve it back to an absolute path to probe the `.factory/df-config.json` pointer.
     const siblingAbs = path.resolve(root, sib.path);
     partialUnits.push({
       name: sib.name,

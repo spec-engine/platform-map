@@ -1,13 +1,13 @@
-// RED-97 Task 2 (PMAP-010/011 e2e): map() rung-3 assembly — the platform-root
+// PMAP-010/011 e2e: map() rung-3 assembly — the platform-root
 // convention. Definition at a small platform root -> member units; run-anywhere
 // equivalence (root vs member root vs nested subdir, byte-identical including
-// pm.root); local disk-location overrides that never leak into output (IP-6);
-// assembly-time drift diagnostics (IP-5/IP-7, D-04); determinism double-runs
+// pm.root); local disk-location overrides that never leak into output;
+// assembly-time drift diagnostics ; determinism double-runs
 // on every new path.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified
-// under `node --test` (D-05). NEVER src/, NEVER .ts. Boundary = the mkdtemp
-// parent (IP-4: tmpdir fixtures live outside os.homedir(), so the boundary
+// Plain ESM .js importing the already-built dist/ — runs unmodified
+// under `node --test`. NEVER src/, NEVER .ts. Boundary = the mkdtemp
+// parent (tmpdir fixtures live outside os.homedir(), so the boundary
 // must be injected for the feature to be testable).
 
 import assert from "node:assert/strict";
@@ -37,7 +37,7 @@ function gitDir(dir) {
  *  non-repo child dir, and an ignored dotdir. */
 function buildPlatform(parent) {
   const plat = path.join(parent, "plat");
-  gitDir(plat); // the platform root is itself a small git repo (D-01)
+  gitDir(plat); // the platform root is itself a small git repo
   writeJson(path.join(plat, "platform-map.json"), {
     name: "acme",
     members: [{ name: "mono-lib" }, { name: "plain-svc" }],
@@ -85,7 +85,7 @@ function assertNoAbsolutePaths(pm, parent) {
   );
 }
 
-test("rung 3 at root: definition yields member units for mixed shapes (PMAP-011, D-01/D-04)", async () => {
+test("rung 3 at root: definition yields member units for mixed shapes (PMAP-011,/)", async () => {
   const parent = mktree();
   try {
     const plat = buildPlatform(parent);
@@ -121,13 +121,13 @@ test("rung 3 at root: definition yields member units for mixed shapes (PMAP-011,
     assert.equal(plain.signals.hasStartScript, true);
     assert.equal(plain.role, "app");
 
-    // unlisted .git child -> UNCONFIGURED_SIBLING (D-04: never silent)
+    // unlisted .git child -> UNCONFIGURED_SIBLING (never silent)
     const rogue = pm.diagnostics.find((d) => d.code === "UNCONFIGURED_SIBLING");
     assert.ok(rogue);
     assert.equal(rogue.path, "rogue");
     assert.ok(pm.units.every((u) => u.name !== "rogue"));
 
-    // non-repo child dir -> PLATFORM_DRIFT info (D-04)
+    // non-repo child dir -> PLATFORM_DRIFT info
     const nonRepo = pm.diagnostics.find(
       (d) => d.code === "PLATFORM_DRIFT" && d.severity === "info",
     );
@@ -278,7 +278,7 @@ test("PMAP-012 dangling marker: hint target holds no definition -> drift warning
   }
 });
 
-test("local override (D-02/IP-6): relocated member is read from the override; output stays conventional and byte-identical", async () => {
+test("local override (/): relocated member is read from the override; output stays conventional and byte-identical", async () => {
   const parent = mktree();
   try {
     const plat = path.join(parent, "plat");
@@ -384,7 +384,7 @@ test("local override: unknown member -> dangling-override drift; boundary escape
   }
 });
 
-test("WR-02: a symlinked local-override target physically outside the boundary -> escape, never read", async (t) => {
+test("a symlinked local-override target physically outside the boundary -> escape, never read", async (t) => {
   const parent = mktree();
   const outsideTree = mktree(); // a SIBLING tmpdir — physically outside `parent`
   try {
@@ -477,7 +477,7 @@ test("listed-but-missing member -> unit still emitted (identity exists) + PLATFO
   }
 });
 
-test("WR-03: a definition at the INVOKED root is honored regardless of boundary (full rung-3 semantics outside $HOME)", async () => {
+test("a definition at the INVOKED root is honored regardless of boundary (full rung-3 semantics outside $HOME)", async () => {
   const parent = mktree();
   try {
     const plat = buildPlatform(parent);
@@ -536,7 +536,7 @@ test("malformed platform-map.local.json -> MALFORMED_CONFIG warning, never a thr
   }
 });
 
-test("CR-01/SEC-06: escaping definition member paths yield exactly the adapter's UNIT_PATH_ESCAPE; the drift check never reads the escaped location", async () => {
+test("escaping definition member paths yield exactly the adapter's UNIT_PATH_ESCAPE; the drift check never reads the escaped location", async () => {
   const outer = mktree();
   try {
     // A marker OUTSIDE the platform root whose content would leak into
@@ -590,7 +590,7 @@ test("CR-01/SEC-06: escaping definition member paths yield exactly the adapter's
   }
 });
 
-test("CR-01/SEC-06: an escaping declaration cannot suppress the non-repo-child diagnostic for a real root child", async () => {
+test("an escaping declaration cannot suppress the non-repo-child diagnostic for a real root child", async () => {
   const parent = mktree();
   try {
     const plat = path.join(parent, "plat");

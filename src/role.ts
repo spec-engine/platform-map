@@ -8,7 +8,7 @@
 import type { Role, Unit, UnitSignals } from "./types.js";
 
 /**
- * [MODEL-03] Classifies a unit's role from its signals via top-down,
+ * Classifies a unit's role from its signals via top-down,
  * first-match rules; pure and replayable without a map() call.
  */
 export function deriveRole(s: UnitSignals): Role {
@@ -35,7 +35,7 @@ export function deriveRole(s: UnitSignals): Role {
 }
 
 /**
- * [MODEL-04] Recursively stamps a derived role onto every unit; a canonical
+ * Recursively stamps a derived role onto every unit; a canonical
  * `overrides[name].role` beats derivation. Stale override keys were already
  * warned by map(), so an unmatched key is simply inert via optional chaining;
  * the overrides object is never spread, so a `__proto__` key is a harmless miss.

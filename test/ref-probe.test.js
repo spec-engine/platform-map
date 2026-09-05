@@ -1,8 +1,8 @@
-// MODEL-06: probeRef — the bounded origin/HEAD default-branch ref probe layered
-// over boundedExec. Plain ESM .js importing the already-built dist/ (D-06) —
-// runs unmodified under `node --test` and `bun test` (D-05).
+// probeRef — the bounded origin/HEAD default-branch ref probe layered
+// over boundedExec. Plain ESM .js importing the already-built dist/ —
+// runs unmodified under `node --test` and `bun test`.
 //
-// The deliberate DF divergence under test: EVERY failure mode (timeout, ENOENT,
+// The deliberate Dark Factory divergence under test: EVERY failure mode (timeout, ENOENT,
 // detached HEAD, no remote, empty stdout) resolves to `null`, never the literal
 // string "origin/HEAD" (Unit.ref is string | null). Cases needing a real .git
 // materialize a temp git repo; the git-absent/ENOENT path is exercised against a

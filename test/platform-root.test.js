@@ -1,10 +1,10 @@
-// RED-97 Task 1 (PMAP-012 unit coverage): the discriminated platform-map.json
-// readers (IP-1) and the bounded upward resolver (IP-8) — discrimination
+// PMAP-012 unit coverage: the discriminated platform-map.json
+// readers and the bounded upward resolver — discrimination
 // matrix, definition/marker/local validators, walk semantics, and boundary
-// containment (D-02/D-03/D-05/D-06).
+// containment.
 //
-// Plain ESM .js importing the already-built dist/ (D-06) — runs unmodified
-// under `node --test` (D-05). NEVER src/, NEVER .ts.
+// Plain ESM .js importing the already-built dist/ — runs unmodified
+// under `node --test`. NEVER src/, NEVER .ts.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -41,7 +41,7 @@ function writePlatformFile(dir, value) {
   writeJson(dir, "platform-map.json", value);
 }
 
-// ── Discrimination matrix (IP-1) ─────────────────────────────────────────
+// ── Discrimination matrix ─────────────────────────────────────────
 
 test("readPlatformFile: members present -> definition", () => {
   const root = mktree();
@@ -168,7 +168,7 @@ test("definition validation: missing/empty name, empty members, bad member field
         { name: "p", members: [{ name: "a", path: 7 }] },
         /"members\[0\].path" must be a non-empty string when present/,
       ],
-      // WR-06: duplicate member names are an authoring error
+      // duplicate member names are an authoring error
       [
         { name: "p", members: [{ name: "a" }, { name: "a", path: "b" }] },
         /"members\[1\].name" duplicates member "a"/,
@@ -203,7 +203,7 @@ test("marker validation: non-string/empty platform rejected", () => {
   }
 });
 
-// ── readCanonicalConfig back-compat + definition conversion (D-05 reuse) ──
+// ── readCanonicalConfig back-compat + definition conversion (reuse) ──
 
 test("readCanonicalConfig: unit-level config behavior unchanged; definition converts members to units", () => {
   const root = mktree();
@@ -273,7 +273,7 @@ test("readLocalConfig: malformed JSON / wrong shape -> diagnostic result, never 
   }
 });
 
-test("WR-01: unreadable ancestor platform-map.json -> diagnostic carries the errno code, never an absolute path", () => {
+test("unreadable ancestor platform-map.json -> diagnostic carries the errno code, never an absolute path", () => {
   const parent = mktree();
   try {
     // A DIRECTORY at the config path forces a deterministic EISDIR read
@@ -297,7 +297,7 @@ test("WR-01: unreadable ancestor platform-map.json -> diagnostic carries the err
   }
 });
 
-test("WR-01: unreadable platform-map.local.json -> diagnostic carries the errno code, never an absolute path", () => {
+test("unreadable platform-map.local.json -> diagnostic carries the errno code, never an absolute path", () => {
   const root = mktree();
   try {
     fs.mkdirSync(path.join(root, "platform-map.local.json")); // EISDIR on read
@@ -355,7 +355,7 @@ test("sniffPlatformFile: classifies without throwing, including malformed", () =
   }
 });
 
-// ── The bounded upward walk (IP-8, D-05/D-06) ─────────────────────────────
+// ── The bounded upward walk  ─────────────────────────────
 
 test("walk: definition at the start dir -> root = start", () => {
   const parent = mktree();
@@ -480,7 +480,7 @@ test("walk: nothing anywhere -> root null", () => {
   }
 });
 
-// ── Containment (D-06 / PMAP-012) ──────────────────────────────────────────
+// ── Containment (PMAP-012) ──────────────────────────────────────────
 
 test("containment: start dir outside the boundary -> inert", () => {
   const parent = mktree();
@@ -517,7 +517,7 @@ test("containment: marker root hint resolving outside the boundary -> UNIT_PATH_
   }
 });
 
-test("WR-02: a symlinked marker hint target physically outside the boundary -> escape, never followed", (t) => {
+test("a symlinked marker hint target physically outside the boundary -> escape, never followed", (t) => {
   const parent = mktree();
   try {
     // outside/: a definition physically OUTSIDE the boundary (plat)
@@ -546,7 +546,7 @@ test("WR-02: a symlinked marker hint target physically outside the boundary -> e
   }
 });
 
-test("WR-02: an unresolvable (dangling) marker hint target is treated as an escape", () => {
+test("an unresolvable (dangling) marker hint target is treated as an escape", () => {
   const parent = mktree();
   try {
     const plat = path.join(parent, "plat");

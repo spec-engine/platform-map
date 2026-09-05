@@ -1,4 +1,4 @@
-// CFG-08: the pure merge() precedence reducer. First-writer-wins per field
+// the pure merge() precedence reducer. First-writer-wins per field
 // (input is precedence-ordered, high first), genuine disagreement on an
 // already-set field -> one CONFIG_CONFLICT naming BOTH sources + BOTH values
 // (existing kept), a lower-precedence source filling an UNSET field -> silent
@@ -6,7 +6,7 @@
 // sibling-promotion gate turns provisional candidates into either real units
 // or UNCONFIGURED_SIBLING diagnostics depending on canonicalDeclaredUnits.
 //
-// Plain ESM .js importing the built dist/merge.mjs (D-06) — the determinism
+// Plain ESM .js importing the built dist/merge.mjs — the determinism
 // (shuffle) assertion routes through toJSON (serialize.ts is the sole sort
 // site; merge itself never sorts).
 

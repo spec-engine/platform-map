@@ -1,7 +1,7 @@
-// CFG-07: siblingsAdapter — provisional sibling emit + DF-pointer detection at
+// siblingsAdapter — provisional sibling emit + pointer detection at
 // the correct .factory/df-config.json STATE_DIR path. Plain ESM .js importing
-// the already-built dist/adapters/siblings.mjs (D-06) — runs unmodified under
-// `node --test` and `bun test` (D-05).
+// the already-built dist/adapters/siblings.mjs — runs unmodified under
+// `node --test` and `bun test`.
 //
 // The ref probe is deliberately NOT this adapter's job (map() owns it), so the
 // resolve-slow-sibling-to-null behavior is asserted at the map() level in
@@ -110,7 +110,7 @@ test("siblingsAdapter treats a malformed df-config.json as a conflict, never thr
   }
 });
 
-test("siblingsAdapter omits both df signals when no .factory/df-config.json exists (MODEL-02 absence-omission)", async () => {
+test("siblingsAdapter omits both df signals when no .factory/df-config.json exists (absence-omission)", async () => {
   const root = mkTempDir();
   try {
     fs.mkdirSync(path.join(root, "svc"));

@@ -1,6 +1,6 @@
-// PRIM-04: symlink-safe, depth/entry-capped directory walker. Plain ESM .js
-// importing the already-built dist/ (D-06) — runs unmodified under
-// `node --test` and `bun test` (D-05).
+// symlink-safe, depth/entry-capped directory walker. Plain ESM .js
+// importing the already-built dist/ — runs unmodified under
+// `node --test` and `bun test`.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -183,7 +183,7 @@ test("exceeding maxDepth appends a CENSUS_TRUNCATED diagnostic and stops descend
   assert.match(result.diagnostics[0].message, /maxDepth exceeded/);
 });
 
-test("a reversed/shuffled injectable readdir yields identical sorted entries (DETR-02)", () => {
+test("a reversed/shuffled injectable readdir yields identical sorted entries", () => {
   function makeDirent(name, isDir) {
     return {
       name,

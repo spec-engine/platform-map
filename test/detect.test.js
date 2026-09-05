@@ -1,13 +1,13 @@
-// DET-01..05: detect() classification, flavor probe, DET-02 recursive
-// composability, and the DET-05 ref:null/no-subprocess invariant. Plain ESM
-// .js importing the already-built dist/ (D-06) — runs unmodified under
-// `node --test` and `bun test` (D-05).
+//..05: detect() classification, flavor probe, recursive
+// composability, and the ref:null/no-subprocess invariant. Plain ESM
+// .js importing the already-built dist/ — runs unmodified under
+// `node --test` and `bun test`.
 //
-// Fixture strategy (D-07, test/fixtures/README.md): the four monorepo
+// Fixture strategy (test/fixtures/README.md): the four monorepo
 // flavors + single-repo are asserted directly against the committed static
 // fixtures (no .git needed — probeWorkspaceManifest short-circuits before
 // any sibling scan happens). Anything needing a real `.git` entry
-// (multi-repo classification, DET-02's sibling-that-is-itself-a-monorepo
+// (multi-repo classification,'s sibling-that-is-itself-a-monorepo
 // proof, and the shuffled-readdir determinism check) is materialized in a
 // temp directory here, seeded from the static fixtures, and removed after.
 
@@ -35,7 +35,7 @@ function rmTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// ── DET-01/03: mode classification + flavor probe order ────────────────────
+// ── mode classification + flavor probe order ────────────────────
 
 test("detect() on a plain directory classifies single-repo", () => {
   const result = detect(path.join(fixturesDir, "single-repo"));
@@ -75,14 +75,14 @@ test("detect() classifies lerna.json as flavor lerna", () => {
   assert.deepEqual(result.workspaceGlobs, ["packages/*"]);
 });
 
-// ── DET-02: recursive composability + DET-04/05: multi-repo/siblings ───────
+// ── recursive composability + multi-repo/siblings ───────
 
-test("multi-repo classification + DET-02 composability + DET-05 ref:null", () => {
+test("multi-repo classification + composability + ref:null", () => {
   const tempRoot = mkTempDir();
   try {
     // Seed from the static multi-repo-of-monorepos fixture (sibling-b's
     // pnpm-workspace.yaml is committed; the .git markers are materialized
-    // here per D-07/test/fixtures/README.md).
+    // here per test/fixtures/README.md).
     fs.cpSync(path.join(fixturesDir, "multi-repo-of-monorepos"), tempRoot, {
       recursive: true,
     });
@@ -107,14 +107,14 @@ test("multi-repo classification + DET-02 composability + DET-05 ref:null", () =>
     const names = multiRepo.siblings.map((s) => s.name).sort();
     assert.deepEqual(names, ["sibling-b", "sibling-c"]);
 
-    // DET-05: every sibling candidate has ref === null — no git subprocess.
+    // every sibling candidate has ref === null — no git subprocess.
     for (const sibling of multiRepo.siblings) {
       assert.equal(sibling.ref, null);
       assert.equal(sibling.conflict, null);
       assert.equal(typeof sibling.hasDfPointer, "boolean");
     }
 
-    // DET-02: detect() called again on sibling-b's own path reports
+    // detect() called again on sibling-b's own path reports
     // mode:"monorepo" — composability, not self-recursion inside detect().
     const nested = detect(path.join(tempRoot, "sibling-b"));
     assert.equal(nested.mode, "monorepo");
@@ -166,8 +166,8 @@ test("sibling df-config.json is classified, not existence-checked: pointer-only 
   }
 });
 
-test("detect() finds a real sibling under the documented default scanRoot '..' and never reports root as its own sibling (CR-01/CR-02 regression)", () => {
-  // Regression coverage for CR-01/CR-02: this deliberately does NOT pass a
+test("detect() finds a real sibling under the documented default scanRoot '..' and never reports root as its own sibling (/ regression)", () => {
+  // Regression coverage for this deliberately does NOT pass a
   // scanRoot override (unlike the composability test above, which uses
   // scanRoot: "." to sidestep the exact default code path that was broken)
   // — it exercises detect(root) with default options, the single most
@@ -206,7 +206,7 @@ test("detect() on a nonexistent path throws RootNotFoundError", () => {
   );
 });
 
-test("RootNotFoundError never leaks the raw root when path.basename(root) is empty (WR-02)", () => {
+test("RootNotFoundError never leaks the raw root when path.basename(root) is empty", () => {
   // path.basename("") === "" — the exact fallback branch that used to
   // reinstate the raw (potentially absolute) `root` argument verbatim.
   assert.throws(
@@ -238,7 +238,7 @@ test("a malformed pnpm-workspace.yaml degrades gracefully, never throws", () => 
   }
 });
 
-// ── DET-05: no git subprocess anywhere in detect()'s call graph ─────────────
+// ── no git subprocess anywhere in detect()'s call graph ─────────────
 
 test("detect.ts and scan.ts import no child_process/spawn/git subprocess module", () => {
   const detectSrc = fs.readFileSync(
@@ -256,9 +256,9 @@ test("detect.ts and scan.ts import no child_process/spawn/git subprocess module"
   }
 });
 
-// ── DETR-02: scanSiblings is deterministic under reversed/shuffled readdir ─
+// ── scanSiblings is deterministic under reversed/shuffled readdir ─
 
-test("scanSiblings sorts by name identically regardless of readdir order (DETR-02)", () => {
+test("scanSiblings sorts by name identically regardless of readdir order", () => {
   const tempRoot = mkTempDir();
   try {
     for (const name of ["zeta-repo", "alpha-repo", "mid-repo"]) {
@@ -297,9 +297,9 @@ test("scanSiblings sorts by name identically regardless of readdir order (DETR-0
   }
 });
 
-// ── WR-02: `ignore` is matched as a GLOB, not just an exact string ──────────
+// ── `ignore` is matched as a GLOB, not just an exact string ──────────
 
-test("scanSiblings excludes siblings via an ignore glob and keeps exact-name ignores (WR-02)", () => {
+test("scanSiblings excludes siblings via an ignore glob and keeps exact-name ignores", () => {
   const tempRoot = mkTempDir();
   try {
     for (const name of ["web-repo", "api-repo", "tmp-repo"]) {
@@ -336,9 +336,9 @@ test("scanSiblings excludes siblings via an ignore glob and keeps exact-name ign
   }
 });
 
-// ── RED-108: sibling-candidate predicate + RUNG1-02 repo-root parity ────────
+// ── PMAP-014: sibling-candidate predicate + repo-root parity ────────
 
-test("looksLikeRepoRoot accepts .git dir, .git file, or package.json; rejects plain dirs (RED-108)", () => {
+test("looksLikeRepoRoot accepts .git dir, .git file, or package.json; rejects plain dirs (PMAP-014)", () => {
   const tempRoot = mkTempDir();
   try {
     const gitDir = path.join(tempRoot, "git-dir");
@@ -367,7 +367,7 @@ test("looksLikeRepoRoot accepts .git dir, .git file, or package.json; rejects pl
   }
 });
 
-test("scanSiblings default gate stays .git-only; injected looksLikeRepoRoot widens to package.json (RED-108)", () => {
+test("scanSiblings default gate stays .git-only; injected looksLikeRepoRoot widens to package.json (PMAP-014)", () => {
   const tempRoot = mkTempDir();
   try {
     const gitSib = path.join(tempRoot, "git-sib");
@@ -407,11 +407,11 @@ test("scanSiblings default gate stays .git-only; injected looksLikeRepoRoot wide
   }
 });
 
-test("scanSiblings drops a hostile readdir entry that escapes the scan directory with UNIT_PATH_ESCAPE (CR-01)", () => {
+test("scanSiblings drops a hostile readdir entry that escapes the scan directory with UNIT_PATH_ESCAPE", () => {
   const tempRoot = mkTempDir();
   try {
     // The expected single-level climb of `scanRoot: ".."` itself must NOT
-    // be treated as an escape (that was the CR-01 bug) — a genuine escape
+    // be treated as an escape (that was the bug) — a genuine escape
     // can only come from a hostile/crafted entry NAME smuggling extra ".."
     // segments beyond the resolved scan directory (a real fs.readdirSync()
     // entry is always a bare basename, but the readdir seam is injectable
