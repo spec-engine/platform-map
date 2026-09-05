@@ -296,8 +296,10 @@ npm run typecheck    # tsc
 
 Unit tests live next to the file they test (`src/map.test.ts` tests
 `src/map.ts`). `test/cli.test.ts` drives the built CLI end to end. The design
-notes are in [docs/spec.md](./docs/spec.md); the pipeline is drawn in
-[docs/architecture.md](./docs/architecture.md).
+notes are in
+[docs/spec.md](https://github.com/spec-engine/platform-map/blob/main/docs/spec.md);
+the pipeline is drawn in
+[docs/architecture.md](https://github.com/spec-engine/platform-map/blob/main/docs/architecture.md).
 
 ## License
 
