@@ -583,3 +583,29 @@ field. `map` becomes synchronous.
 
 Open question for you: `schemaVersion` bumps to 2 because the shape changed.
 Version 0.4.0 on npm.
+
+---
+
+## 0.5 addendum — ecosystems
+
+0.4 read `package.json` only. 0.5 makes the same map language-aware,
+table-driven: `src/ecosystems.ts` lists node, python, rust, and go, and for
+each the package manifest, how to read its name and declared dependency
+names, the workspace manifest and how to read its member globs, and the
+lockfiles that identify a package manager. Nothing else names a manifest.
+
+- `Repo.ecosystem` (optional; absent when a repo has no manifest) and
+  `Package.ecosystem` (always set) are added. `Detection` gains `ecosystem`
+  and three new `manifest` kinds. `schemaVersion` stays 2: additive only.
+- A repo with manifests from two ecosystems reports the one whose workspace
+  manifest is present, else the first in table order, with an
+  `AMBIGUOUS_ECOSYSTEM` info when more than one qualifies.
+- `dependsOn` matches by package name within one ecosystem. Python names are
+  compared after PEP 503 normalisation; the target's declared name is what
+  appears in `dependsOn`.
+- Parsers are built in: a TOML subset (tables, arrays of tables, dotted
+  keys, strings, numbers, booleans, arrays, inline tables) and a go.mod /
+  go.work line reader, next to the pnpm YAML subset. An unsupported shape
+  is a `MALFORMED_FILE` warning, never a guess.
+- The README's "Supported ecosystems" table is generated from the table by
+  `npm run docs:ecosystems`; `src/ecosystems.test.ts` fails when they drift.

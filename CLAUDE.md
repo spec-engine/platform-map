@@ -8,8 +8,9 @@ monorepo. Two committed `platform-map.json` shapes (platform file with
 `name` + `members`; leaf marker with `platform` + `member`), members as
 child directories of the platform repo, and one per-user
 `~/.config/platform-map/platforms.json` for other layouts. The map carries
-`packageName`, `packageManager`, workspace `packages`, and `dependsOn` across
-the platform. Design: `docs/spec.md`. Public docs: `README.md`.
+`ecosystem` (node, python, rust, go), `packageName`, `packageManager`,
+workspace `packages`, and `dependsOn` across the platform, matched within an
+ecosystem. Design: `docs/spec.md`. Public docs: `README.md`.
 
 Constraints: zero runtime dependencies; Node >= 24 and Bun; deterministic
 JSON (sorted, no machine paths, byte-identical from root, member, or
@@ -27,7 +28,9 @@ TypeScript run directly by `node --test`: unit tests colocated next to the
 file they test (`src/map.test.ts`), the CLI driven end to end in
 `test/cli.test.ts` against `dist/`, and a Bun smoke in `test-bun/`.
 Scripts: `build`, `test`, `test:bun`, `typecheck`, `lint`, `lint:docs`.
-Run all six before pushing.
+Run all six before pushing. `docs:ecosystems` regenerates the README's
+"Supported ecosystems" table from `src/ecosystems.ts`; a test fails when
+they drift.
 <!-- DF:stack-end -->
 
 <!-- DF:conventions-start source:CONVENTIONS.md -->
@@ -37,6 +40,7 @@ Run all six before pushing.
 - Problems are diagnostics, not throws; `DirectoryNotFoundError` is the only exception.
 - Do not infer judgments like app-vs-library; declare them or ask.
 - No adapters for specific tools. No bare DF/SE/CA abbreviations or private ticket ids in public files (`npm run lint:docs` enforces this).
+- Everything that knows a manifest by name lives in `src/ecosystems.ts`. Manifests are read by the built-in parsers in `src/internal/` (no parser dependencies); an unsupported shape is a `MALFORMED_FILE` diagnostic.
 - Comments: one short header per file, plus only what the code cannot say.
 - Anything that writes is split into `planX` (pure) and `applyX`.
 - CI: snapshot-poll checks, never `--watch`. The build job uses `npm pack --dry-run`, not `npm publish --dry-run` (npm 11 refuses a dry run of a published version).
@@ -48,10 +52,11 @@ Run all six before pushing.
 See `docs/architecture.md`. `src/files.ts` reads and writes the three files;
 `src/resolve.ts` finds the platform root from wherever the command ran;
 `src/map.ts` (`map`, `locate`, `check`) uses `src/detect.ts`,
-`src/discover.ts`, and `src/packages.ts`; `src/init.ts` and `src/link.ts`
-are the two writers; `src/render.ts` produces the tree, JSON, and Mermaid.
-`src/internal/` holds the glob matcher, the bounded walk, and the pnpm YAML
-subset.
+`src/discover.ts`, and `src/packages.ts`, which read the ecosystem table in
+`src/ecosystems.ts`; `src/init.ts` and `src/link.ts` are the two writers;
+`src/render.ts` produces the tree, JSON, and Mermaid. `src/internal/` holds
+the glob matcher, the bounded walk, the pnpm YAML subset, the TOML subset,
+and the go.mod / go.work reader.
 <!-- DF:architecture-end -->
 
 <!-- DF:skills-start source:skills/ -->
