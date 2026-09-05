@@ -19,6 +19,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx biome ci .
       - run: npm run lint:docs
+      - run: npm run lint:tests
 
   build:
     runs-on: ubuntu-latest
@@ -62,11 +63,11 @@ jobs:
       - run: npm ci --omit=dev
       - if: matrix.runtime != 'bun'
         run: npm test
-      # Bun cannot run the files in test/: its node:test support rejects a test
-      # that starts while another one is still running (oven-sh/bun#5090), and
-      # several files here do that. So the Node lanes run test/, and this lane
-      # runs the small Bun-native suite in test-bun/ against the built package
-      # to prove it works on Bun.
+      # Bun cannot run the node:test files: its node:test support rejects a
+      # test that starts while another one is still running (oven-sh/bun#5090),
+      # and several files here do that. So the Node lane runs them, and this
+      # lane runs the small Bun-native suite in test-bun/ against the built
+      # package to prove it works on Bun.
       - if: matrix.runtime == 'bun'
         run: bun test test-bun/
 

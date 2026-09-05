@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acmePlatform, readJson, rm, tmpDir, write } from "./helpers.ts";
+import { acmePlatform, readJson, rm, tmpDir, write } from "../test/helpers.ts";
 
 const cli = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

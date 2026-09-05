@@ -1,6 +1,8 @@
 # Test fixtures
 
-Committed directory trees used by the detection and package tests. They
+Committed directory trees used by the detection and package tests. `test/`
+holds only these fixtures and `helpers.ts`; tests live next to the files they
+test. They
 contain only config files: no `.git` directories, because git does not track
 nested repositories. Tests that need a `.git` entry, a symlink, or a whole
 platform build one in a temp directory at run time (see `test/helpers.ts`).
