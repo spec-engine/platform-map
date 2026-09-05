@@ -31,7 +31,9 @@ jobs:
       - run: npm run build # tsdown build --publint --attw
       - run: npx attw --pack --profile node16
       - run: npx publint
-      - run: npm publish --dry-run
+      # pack, not publish --dry-run: npm 11 refuses a dry run of an already
+      # published version, which would fail every PR after a release.
+      - run: npm pack --dry-run
       - run: test -x dist/platform-map.mjs
       - uses: actions/upload-artifact@v7
         with:
