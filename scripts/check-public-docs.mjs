@@ -37,7 +37,7 @@ const RULES = [
   { re: /\bIP-\d\b/, why: "private task id" },
   { re: /\bT-\d{2}(?:\.\d{2})?-\d{2}\b/, why: "private task id" },
   { re: /\b\d{2}(?:-\d{2})?-(?:RESEARCH|LEARNINGS|SUMMARY|PLAN)\.md\b/, why: "untracked planning artifact" },
-  { re: /\bBRIEF(?:\.md| §)|\bDESIGN(?:\.md| §)/, why: "moved to docs/internal (history only)" },
+  { re: /\bBRIEF(?:\.md| §)|\bDESIGN(?:\.md| §)/, why: "removed design document" },
   { re: /\bthree-bucket\b|\bNO_SPEC_CONFIG\b/, why: "another product's vocabulary" },
 ];
 
