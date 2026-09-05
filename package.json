@@ -4,6 +4,18 @@
   "type": "module",
   "license": "MIT",
   "description": "Zero-dependency TypeScript library + CLI that deterministically maps a directory tree's platform topology (units, edges, diagnostics).",
+  "keywords": [
+    "monorepo",
+    "workspace",
+    "topology",
+    "platform",
+    "dependency-graph",
+    "pnpm",
+    "yarn",
+    "npm-workspaces",
+    "lerna",
+    "cli"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/spec-engine/platform-map.git"
@@ -48,7 +60,8 @@
     "test:bun": "bun test test-bun/",
     "smoke:cold-install": "npm run build && node scripts/cold-install-smoke.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "biome ci ."
+    "lint": "biome ci .",
+    "lint:docs": "node scripts/check-public-docs.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
