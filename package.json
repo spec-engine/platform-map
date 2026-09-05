@@ -58,12 +58,13 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "node --test --test-concurrency=4 'src/**/*.test.ts' 'test/**/*.test.ts'",
+    "test": "node --test --test-concurrency=4 'src/**/*.test.ts' 'bin/**/*.test.ts'",
     "test:bun": "bun test test-bun/",
     "typecheck": "tsc --noEmit",
     "lint": "biome ci .",
     "lint:docs": "node scripts/check-public-docs.mjs",
-    "docs:ecosystems": "node scripts/update-readme-ecosystems.mjs"
+    "docs:ecosystems": "node scripts/update-readme-ecosystems.mjs",
+    "lint:tests": "node scripts/check-test-placement.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

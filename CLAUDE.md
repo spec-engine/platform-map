@@ -24,11 +24,14 @@ over library functions.
 
 TypeScript (strict, `isolatedDeclarations`), built by tsdown into ESM + CJS
 for the library and ESM for the CLI. Biome for lint and format. Tests are
-TypeScript run directly by `node --test`: unit tests colocated next to the
-file they test (`src/map.test.ts`), the CLI driven end to end in
-`test/cli.test.ts` against `dist/`, and a Bun smoke in `test-bun/`.
-Scripts: `build`, `test`, `test:bun`, `typecheck`, `lint`, `lint:docs`.
-Run all six before pushing. `docs:ecosystems` regenerates the README's
+TypeScript run directly by `node --test`. Convention: every test sits next
+to the file it tests and is named after it (`src/map.test.ts` tests
+`src/map.ts`; `bin/platform-map.test.ts` drives the built CLI end to end
+against `dist/`). `test/` holds only shared fixtures and helpers;
+`npm run lint:tests` enforces this. The Bun smoke in `test-bun/` is the one
+package-level test (Bun cannot run the node:test files).
+Scripts: `build`, `test`, `test:bun`, `typecheck`, `lint`, `lint:docs`,
+`lint:tests`. Run all seven before pushing. `docs:ecosystems` regenerates the README's
 "Supported ecosystems" table from `src/ecosystems.ts`; a test fails when
 they drift.
 <!-- DF:stack-end -->

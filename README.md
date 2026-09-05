@@ -329,16 +329,19 @@ Node 24 or newer, or Bun. Zero runtime dependencies.
 ```
 npm ci
 npm run build        # dist/ (tsdown)
-npm test             # node --test over src/**/*.test.ts and test/**/*.test.ts
+npm test             # node --test over src/**/*.test.ts and bin/**/*.test.ts
 npm run test:bun     # the same package under Bun
 npm run lint         # biome
 npm run lint:docs    # no private jargon in public files
+npm run lint:tests   # every test sits next to the file it tests
 npm run typecheck    # tsc
 npm run docs:ecosystems   # regenerate the Supported ecosystems table in this README
 ```
 
-Unit tests live next to the file they test (`src/map.test.ts` tests
-`src/map.ts`). `test/cli.test.ts` drives the built CLI end to end. The design
+Every test lives next to the file it tests and is named after it
+(`src/map.test.ts` tests `src/map.ts`; `bin/platform-map.test.ts` drives the
+built CLI end to end). `test/` holds only shared fixtures and helpers;
+`npm run lint:tests` enforces this. The design
 notes are in
 [docs/spec.md](https://github.com/spec-engine/platform-map/blob/main/docs/spec.md);
 the pipeline is drawn in
